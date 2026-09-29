@@ -1,0 +1,79 @@
+{
+  "characters": [
+    {
+      "id": "lisica",
+      "name": "Lisica",
+      "head": "assets/heads/head1.png",
+      "description": "Opasni lokalni JNA ratnik. Sad ga vidiš u Vrbovcu, a za dvije sekunde već radi u Njemačkoj.",
+      "colors": {
+        "shirt": "#3a6fd8",
+        "shirtShade": "#274d9e",
+        "pants": "#2b2b2b",
+        "pantsShade": "#161616",
+        "shoe": "#7a3b2e"
+      },
+      "stats": {
+        "walkSpeed": 200,
+        "runSpeed": 330,
+        "jumpVelocity": 620,
+        "airControl": 0.85
+      },
+      "ability": {
+        "type": "teleport",
+        "value": 210,
+        "label": "Kvantna teleportacija",
+        "hint": "U zraku pritisni skok još jednom"
+      }
+    },
+    {
+      "id": "dvekune",
+      "name": "Dve kune",
+      "head": "assets/heads/head2.png",
+      "description": "Vjerni kućapazitelj u parku u Vrbovcu. U svojim superspeed plavim kroksicama uvijek spreman pitati imaš li možda dvije kune.",
+      "colors": {
+        "shirt": "#d8503a",
+        "shirtShade": "#9e2f1f",
+        "pants": "#3a3a3a",
+        "pantsShade": "#1a1a1a",
+        "shoe": "#2f6fd8"
+      },
+      "stats": {
+        "walkSpeed": 190,
+        "runSpeed": 320,
+        "jumpVelocity": 660,
+        "airControl": 0.85
+      },
+      "ability": {
+        "type": "magnet",
+        "value": 230,
+        "label": "Magnet za kune",
+        "hint": "Novčići sami dolaze k njemu"
+      }
+    },
+    {
+      "id": "fas",
+      "name": "Faš",
+      "head": "assets/heads/head3.png",
+      "description": "Glavni junak svake pive – njezin početak i kraj. Uvijek spreman zatražiti novac za pivu, a ako nemaš, nema veze, svejedno će se napiti!",
+      "colors": {
+        "shirt": "#2e8b3a",
+        "shirtShade": "#1c5c24",
+        "pants": "#2b2b2b",
+        "pantsShade": "#161616",
+        "shoe": "#4a2f1f"
+      },
+      "stats": {
+        "walkSpeed": 210,
+        "runSpeed": 350,
+        "jumpVelocity": 600,
+        "airControl": 0.9
+      },
+      "ability": {
+        "type": "none",
+        "value": 0,
+        "label": "Bez posebne moći, samo pije",
+        "hint": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "types": {
+    "patroller": {
+      "name": "Skitnica",
+      "color": "#7a4a2e",
+      "colorShade": "#4f2f1c",
+      "outline": "#1a1a1a",
+      "width": 48,
+      "height": 46,
+      "speed": 70,
+      "points": 100,
+      "behavior": "patrol",
+      "stompable": true
+    },
+    "hopper": {
+      "name": "Skakavac",
+      "color": "#3b8a3f",
+      "colorShade": "#255627",
+      "outline": "#1a1a1a",
+      "width": 42,
+      "height": 42,
+      "speed": 0,
+      "hopVelocity": 480,
+      "hopInterval": 1300,
+      "points": 150,
+      "behavior": "hop",
+      "stompable": true
+    },
+    "charger": {
+      "name": "Jurisnik",
+      "color": "#a3272b",
+      "colorShade": "#6b1518",
+      "outline": "#1a1a1a",
+      "width": 54,
+      "height": 40,
+      "speed": 150,
+      "points": 200,
+      "behavior": "patrol",
+      "stompable": true
+    }
+  }
+}

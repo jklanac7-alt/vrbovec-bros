@@ -1,0 +1,88 @@
+{
+  "id": "vrbovec-centar",
+  "name": "Vrbovec Centar",
+  "formatVersion": 1,
+  "width": 6400,
+  "height": 720,
+  "tileSize": 64,
+  "gravity": 1400,
+  "timeLimit": 200,
+  "background": "vrbovec_day",
+  "playerStart": { "x": 120, "y": 560 },
+  "checkpoints": [
+    { "x": 3060, "y": 656 },
+    { "x": 4950, "y": 656 }
+  ],
+  "ground": [
+    { "x": 0, "y": 656, "width": 1600, "height": 64, "type": "grass" },
+    { "x": 1730, "y": 656, "width": 1150, "height": 64, "type": "grass" },
+    { "x": 2990, "y": 656, "width": 1720, "height": 64, "type": "grass" },
+    { "x": 4860, "y": 656, "width": 1540, "height": 64, "type": "grass" }
+  ],
+  "platforms": [
+    { "x": 620, "y": 550, "width": 192, "height": 32, "type": "brick" },
+    { "x": 900, "y": 440, "width": 128, "height": 32, "type": "brick" },
+    { "x": 1560, "y": 550, "width": 128, "height": 32, "type": "brick" },
+    { "x": 2180, "y": 550, "width": 256, "height": 32, "type": "brick" },
+    { "x": 2830, "y": 550, "width": 120, "height": 32, "type": "brick" },
+    { "x": 3320, "y": 550, "width": 192, "height": 32, "type": "brick" },
+    { "x": 3560, "y": 440, "width": 128, "height": 32, "type": "brick" },
+    { "x": 4600, "y": 550, "width": 180, "height": 32, "type": "brick" },
+    { "x": 4950, "y": 560, "width": 128, "height": 32, "type": "brick" },
+    { "x": 5110, "y": 450, "width": 128, "height": 32, "type": "brick" },
+    { "x": 5270, "y": 340, "width": 128, "height": 32, "type": "brick" },
+    { "x": 5560, "y": 546, "width": 192, "height": 32, "type": "brick" }
+  ],
+  "columns": [
+    { "x": 1300, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
+    { "x": 3760, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
+    { "x": 4300, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
+    { "x": 5900, "y": 556, "width": 80, "height": 100, "type": "stoneColumn" }
+  ],
+  "questionBlocks": [
+    { "x": 480, "y": 486, "item": "coin" },
+    { "x": 1180, "y": 486, "item": "mushroom" },
+    { "x": 2300, "y": 380, "item": "coin" },
+    { "x": 2560, "y": 486, "item": "coin" },
+    { "x": 3900, "y": 486, "item": "coin" },
+    { "x": 4400, "y": 486, "item": "coin" },
+    { "x": 5330, "y": 170, "item": "coin" },
+    { "x": 5830, "y": 486, "item": "extraLife" },
+    { "x": 6050, "y": 486, "item": "coin" }
+  ],
+  "coins": [
+    { "x": 300, "y": 600 }, { "x": 360, "y": 600 },
+    { "x": 650, "y": 500 }, { "x": 700, "y": 500 }, { "x": 760, "y": 500 },
+    { "x": 930, "y": 390 }, { "x": 985, "y": 390 },
+    { "x": 1300, "y": 500 }, { "x": 1350, "y": 480 },
+    { "x": 1620, "y": 560 }, { "x": 1665, "y": 530 }, { "x": 1710, "y": 560 },
+    { "x": 2200, "y": 500 }, { "x": 2260, "y": 500 }, { "x": 2320, "y": 500 }, { "x": 2380, "y": 500 },
+    { "x": 2890, "y": 520 }, { "x": 2935, "y": 490 }, { "x": 2980, "y": 520 },
+    { "x": 3350, "y": 500 }, { "x": 3410, "y": 500 }, { "x": 3470, "y": 500 },
+    { "x": 3590, "y": 390 }, { "x": 3645, "y": 390 },
+    { "x": 4000, "y": 600 }, { "x": 4060, "y": 600 }, { "x": 4120, "y": 600 },
+    { "x": 4630, "y": 500 }, { "x": 4700, "y": 500 },
+    { "x": 4740, "y": 560 }, { "x": 4790, "y": 530 }, { "x": 4840, "y": 560 },
+    { "x": 4990, "y": 510 }, { "x": 5150, "y": 400 }, { "x": 5310, "y": 290 },
+    { "x": 5600, "y": 496 }, { "x": 5660, "y": 496 }, { "x": 5720, "y": 496 },
+    { "x": 6150, "y": 600 }, { "x": 6210, "y": 600 }
+  ],
+  "enemies": [
+    { "type": "patroller", "x": 900, "y": 600, "range": 180 },
+    { "type": "hopper", "x": 1450, "y": 600 },
+    { "type": "patroller", "x": 2400, "y": 600, "range": 200 },
+    { "type": "charger", "x": 3250, "y": 600, "range": 200 },
+    { "type": "patroller", "x": 3950, "y": 600, "range": 150 },
+    { "type": "hopper", "x": 4960, "y": 600 },
+    { "type": "patroller", "x": 5700, "y": 600, "range": 150 },
+    { "type": "charger", "x": 6100, "y": 600, "range": 150 }
+  ],
+  "landmarks": [
+    { "type": "crkva", "x": 420, "y": 620, "scale": 0.72, "scrollFactor": 0.55, "solid": false },
+    { "type": "kula", "x": 2050, "y": 620, "scale": 0.8, "scrollFactor": 0.6, "solid": false },
+    { "type": "dvorac", "x": 3300, "y": 620, "scale": 0.7, "scrollFactor": 0.55, "solid": false },
+    { "type": "lovrecina", "x": 5050, "y": 620, "scale": 0.75, "scrollFactor": 0.65, "solid": false },
+    { "type": "mauzolej", "x": 6150, "y": 620, "scale": 0.8, "scrollFactor": 0.6, "solid": false }
+  ],
+  "flag": { "x": 6280, "y": 656, "height": 320 }
+}

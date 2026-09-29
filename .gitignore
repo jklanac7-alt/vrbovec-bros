@@ -1,0 +1,10 @@
+# Originalne fotke u punoj rezoluciji (izvorni materijal, igra ih ne koristi).
+# Ako ih zelis ipak objaviti, obrisi ovu liniju i napravi novi commit.
+iamges/
+
+node_modules/
+.vercel/
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log

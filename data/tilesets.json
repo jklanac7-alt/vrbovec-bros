@@ -1,0 +1,13 @@
+{
+  "ground": {
+    "grass": { "top": "#5bc25a", "topDark": "#3f9c40", "body": "#8a5a2e", "bodyDark": "#6b431f", "outline": "#1a1a1a" },
+    "dirt": { "body": "#8a5a2e", "bodyDark": "#6b431f", "outline": "#1a1a1a" }
+  },
+  "platform": {
+    "brick": { "color": "#b35a2e", "colorDark": "#8a3f1f", "outline": "#1a1a1a" },
+    "question": { "color": "#f4c430", "colorDark": "#c99a1f", "usedColor": "#8a6d3b", "outline": "#1a1a1a" }
+  },
+  "column": {
+    "stoneColumn": { "color": "#a8a8a0", "colorDark": "#7d7d76", "outline": "#1a1a1a" }
+  }
+}

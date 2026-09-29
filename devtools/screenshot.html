@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8" />
+<base href="../" />
+<title>Vrbovec Bros - screenshot</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+  #game-container{position:fixed;inset:0}
+  #game{width:100%;height:100%}
+  #shot{position:fixed;left:-9999px;top:0;white-space:pre-wrap;word-break:break-all}
+</style>
+</head>
+<body>
+  <div id="game-container"><div id="game"></div></div>
+  <div id="boot-loading" style="display:none"><div id="boot-bar-fill"></div></div>
+  <div id="shot">PENDING</div>
+
+  <script src="lib/phaser.min.js"></script>
+  <script src="src/systems/SaveManager.js"></script>
+  <script src="src/systems/DataStore.js"></script>
+  <script src="src/systems/InputManager.js"></script>
+  <script src="src/objects/Landmarks.js"></script>
+  <script src="src/objects/TileRenderer.js"></script>
+  <script src="src/objects/Player.js"></script>
+  <script src="src/objects/Enemy.js"></script>
+  <script src="src/objects/Collectibles.js"></script>
+  <script src="src/ui/UIKit.js"></script>
+  <script src="src/ui/HUD.js"></script>
+  <script src="src/ui/Background.js"></script>
+  <script src="src/scenes/BootScene.js"></script>
+  <script src="src/scenes/PreloadScene.js"></script>
+  <script src="src/scenes/MainMenuScene.js"></script>
+  <script src="src/scenes/CharacterSelectScene.js"></script>
+  <script src="src/scenes/LevelSelectScene.js"></script>
+  <script src="src/scenes/GameScene.js"></script>
+  <script src="src/scenes/PauseScene.js"></script>
+  <script src="src/scenes/GameOverScene.js"></script>
+  <script src="src/scenes/LevelCompleteScene.js"></script>
+  <script src="src/main.js"></script>
+
+<script>
+/* Renders one screen of the game and writes it into the DOM as a PNG data URL,
+ * so a headless browser dump can save it to disk. Usage: screenshot.html?shot=menu
+ */
+(function () {
+  var params = new URLSearchParams(location.search);
+  var shot = params.get('shot') || 'menu';
+  var atX = parseInt(params.get('x') || '0', 10);
+  var outEl = document.getElementById('shot');
+
+  var simTime = 0;
+  var fakeNow = Date.now();
+  Date.now = function () { return Math.round(fakeNow); };
+  function steps(n) {
+    for (var i = 0; i < n; i++) {
+      simTime += 16.666;
+      fakeNow += 16.666;
+      window.game.loop.time = simTime;
+      window.game.loop.delta = 16.666;
+      window.game.step(simTime, 16.666);
+    }
+  }
+  function input(o) {
+    o = o || {};
+    return function () {
+      return { left: !!o.left, right: !!o.right, run: !!o.run,
+        jumpDown: !!o.jump, jumpPressed: !!o.jump, pausePressed: false };
+    };
+  }
+
+  function capture() {
+    window.game.renderer.snapshot(function (image) {
+      outEl.textContent = '===SHOT===' + image.src + '===END===';
+      document.title = 'SHOT_READY';
+    });
+    steps(1);
+  }
+
+  function setup() {
+    var g = window.game;
+    if (shot === 'menu') {
+      steps(4);
+    } else if (shot === 'chars') {
+      g.scene.start('CharacterSelect');
+      g.scene.stop('MainMenu');
+      steps(4);
+    } else if (shot === 'levels') {
+      SaveManager.setSelectedCharacter(DataStore.getCharacterList()[1].id);
+      g.scene.start('LevelSelect');
+      g.scene.stop('MainMenu');
+      steps(4);
+    } else if (shot === 'game' || shot === 'pause' || shot === 'complete') {
+      g.scene.start('Game', { levelId: 'vrbovec-centar', characterId: DataStore.getCharacterList()[0].id });
+      g.scene.stop('MainMenu');
+      steps(5);
+      var gs = g.scene.getScene('Game');
+      gs.inputManager.getState = input({});
+      if (atX > 0) {
+        gs.player.x = atX;
+        gs.player.y = 520;
+        gs.player.body.reset(atX, 520);
+        gs.cameras.main.centerOn(atX, 360);
+      }
+      steps(45);
+      if (shot === 'pause') {
+        gs.inputManager.getState = input({});
+        gs.inputManager.destroy();
+        gs.inputManager = null;
+        gs.scene.pause();
+        gs.scene.launch('Pause', { levelId: 'vrbovec-centar', characterId: DataStore.getCharacterList()[0].id });
+        steps(6);
+      } else if (shot === 'complete') {
+        gs.player.x = gs.level.flag.x;
+        gs.player.y = gs.level.flag.y - 150;
+        gs.player.body.reset(gs.player.x, gs.player.y);
+        steps(140);
+      }
+    }
+    capture();
+  }
+
+  var attempts = 0;
+  function waitForMenu() {
+    attempts++;
+    try { steps(3); } catch (e) {}
+    var ready = false;
+    try {
+      ready = !!(DataStore.levels && DataStore.characters &&
+        window.game.scene.getScene('MainMenu').scene.isActive());
+    } catch (e) { ready = false; }
+    if (ready || attempts > 400) setup();
+    else setTimeout(waitForMenu, 40);
+  }
+
+  setTimeout(function () {
+    simTime = performance.now();
+    window.game.loop.stop();
+    waitForMenu();
+  }, 200);
+})();
+</script>
+</body>
+</html>

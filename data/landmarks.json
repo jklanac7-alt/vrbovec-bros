@@ -1,0 +1,115 @@
+{
+  "kula": {
+    "id": "kula",
+    "name": "Kula Petra Zrinskog",
+    "description": "Round two-story medieval stone tower with a conical red-tiled roof, small brown-shuttered windows and a wooden door",
+    "baseWidth": 160,
+    "baseHeight": 260,
+    "colors": {
+      "wall": "#f5efe1",
+      "roof": "#c1523a",
+      "roofDark": "#8a2a20",
+      "outline": "#1a1a1a",
+      "window": "#3a2a1a",
+      "trim": "#d8cdb0",
+      "door": "#3a2a1a",
+      "base": "#a8a196"
+    },
+    "role": "platform",
+    "solid": true,
+    "collisionBoxes": [
+      { "x": 5, "y": 180, "w": 150, "h": 80 },
+      { "x": 20, "y": 90, "w": 120, "h": 90 },
+      { "x": 35, "y": 55, "w": 90, "h": 35 }
+    ]
+  },
+  "crkva": {
+    "id": "crkva",
+    "name": "Crkva sv. Vida",
+    "description": "Tall white-and-yellow baroque church tower with a dark pointed spire, a round clock face, a cross on top, and a lower nave with an orange-tiled roof",
+    "baseWidth": 220,
+    "baseHeight": 420,
+    "colors": {
+      "wall": "#eab438",
+      "roof": "#c1622f",
+      "roofDark": "#262a24",
+      "outline": "#1a1a1a",
+      "window": "#3a2a1a",
+      "trim": "#f7f2e3",
+      "clockFace": "#f7f2e3",
+      "clockHands": "#1a1a1a",
+      "accent": "#d4af37"
+    },
+    "role": "background",
+    "solid": false,
+    "collisionBoxes": []
+  },
+  "dvorac": {
+    "id": "dvorac",
+    "name": "Dvorac Patačić",
+    "description": "Small baroque palace with ochre/yellow walls, a row of arched windows on two floors, white trim bands, and a red-brown roof",
+    "baseWidth": 320,
+    "baseHeight": 180,
+    "colors": {
+      "wall": "#d99a35",
+      "roof": "#8b3a2a",
+      "roofDark": "#5c2419",
+      "outline": "#1a1a1a",
+      "window": "#3a2a1a",
+      "trim": "#f7f2e3",
+      "door": "#4a2e1a",
+      "base": "#9a9086"
+    },
+    "role": "background",
+    "solid": false,
+    "collisionBoxes": []
+  },
+  "lovrecina": {
+    "id": "lovrecina",
+    "name": "Lovrečina Grad",
+    "description": "Neo-baroque castle wing with cream/tan walls, two round corner turrets topped with pointed dark roofs, and a red-brown main roof",
+    "baseWidth": 360,
+    "baseHeight": 280,
+    "colors": {
+      "wall": "#e0d3ae",
+      "roof": "#8b4a35",
+      "roofDark": "#3a4a3a",
+      "outline": "#1a1a1a",
+      "window": "#3a2a1a",
+      "trim": "#f7f2e3",
+      "turretRoof": "#3a4a3a",
+      "base": "#9a9086"
+    },
+    "role": "platform",
+    "solid": true,
+    "collisionBoxes": [
+      { "x": 20, "y": 200, "w": 320, "h": 80 },
+      { "x": 0, "y": 90, "w": 90, "h": 110 },
+      { "x": 10, "y": 60, "w": 70, "h": 30 },
+      { "x": 280, "y": 120, "w": 70, "h": 80 }
+    ]
+  },
+  "mauzolej": {
+    "id": "mauzolej",
+    "name": "De Piennes mauzolej",
+    "description": "Black/dark granite rectangular tomb with a stepped pyramid-like roof, small gold accent plaque, a dark doorway and two small flanking columns",
+    "baseWidth": 140,
+    "baseHeight": 150,
+    "colors": {
+      "wall": "#232323",
+      "roof": "#1c1c1c",
+      "roofDark": "#141414",
+      "outline": "#0a0a0a",
+      "window": "#0a0a0a",
+      "trim": "#b8b8b0",
+      "accent": "#d4af37",
+      "column": "#3a3a3a",
+      "door": "#0a0a0a"
+    },
+    "role": "background",
+    "solid": true,
+    "collisionBoxes": [
+      { "x": 0, "y": 40, "w": 140, "h": 110 }
+    ]
+  }
+}

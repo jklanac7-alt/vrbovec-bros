@@ -1,0 +1,15 @@
+{
+  "name": "Vrbovec Bros",
+  "short_name": "Vrbovec Bros",
+  "description": "2D side-scrolling platformer smjesten u Vrbovcu, Hrvatska.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#5c94fc",
+  "theme_color": "#5c94fc",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

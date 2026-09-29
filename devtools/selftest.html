@@ -1,0 +1,517 @@
+﻿<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8" />
+<base href="../" />
+<title>Vrbovec Bros - selftest</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#111;overflow:hidden}
+  #game-container{position:fixed;inset:0;opacity:0.25}
+  #game{width:100%;height:100%}
+  #selftest-result{position:fixed;left:0;top:0;right:0;z-index:99999;color:#8f8;
+    font:12px/1.45 Consolas,monospace;white-space:pre-wrap;background:#000c;padding:10px;margin:0;
+    max-height:100%;overflow:auto}
+  .fail{color:#f66}
+</style>
+</head>
+<body>
+  <div id="game-container"><div id="game"></div></div>
+  <div id="boot-loading" style="display:none"><div id="boot-bar-fill"></div></div>
+  <pre id="selftest-result">PENDING</pre>
+
+<script>
+window.__errors = [];
+window.__warns = [];
+function rec(list, msg) { list.push(String(msg).slice(0, 300)); }
+window.addEventListener('error', function (e) {
+  rec(window.__errors, 'JS ERROR: ' + (e.message || '') + ' @ ' + (e.filename || '').split('/').pop() + ':' + (e.lineno || ''));
+});
+window.addEventListener('unhandledrejection', function (e) {
+  rec(window.__errors, 'REJECTION: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+var _err = console.error;
+console.error = function () { rec(window.__errors, 'console.error: ' + Array.prototype.map.call(arguments, String).join(' ')); _err.apply(console, arguments); };
+var _warn = console.warn;
+console.warn = function () { rec(window.__warns, Array.prototype.map.call(arguments, String).join(' ')); _warn.apply(console, arguments); };
+</script>
+
+  <script src="lib/phaser.min.js"></script>
+  <script src="src/systems/SaveManager.js"></script>
+  <script src="src/systems/DataStore.js"></script>
+  <script src="src/systems/InputManager.js"></script>
+  <script src="src/objects/Landmarks.js"></script>
+  <script src="src/objects/TileRenderer.js"></script>
+  <script src="src/objects/Player.js"></script>
+  <script src="src/objects/Enemy.js"></script>
+  <script src="src/objects/Collectibles.js"></script>
+  <script src="src/ui/UIKit.js"></script>
+  <script src="src/ui/HUD.js"></script>
+  <script src="src/ui/Background.js"></script>
+  <script src="src/scenes/BootScene.js"></script>
+  <script src="src/scenes/PreloadScene.js"></script>
+  <script src="src/scenes/MainMenuScene.js"></script>
+  <script src="src/scenes/CharacterSelectScene.js"></script>
+  <script src="src/scenes/LevelSelectScene.js"></script>
+  <script src="src/scenes/GameScene.js"></script>
+  <script src="src/scenes/PauseScene.js"></script>
+  <script src="src/scenes/GameOverScene.js"></script>
+  <script src="src/scenes/LevelCompleteScene.js"></script>
+  <script src="src/main.js"></script>
+
+<script>
+/* Headless-friendly regression suite. Chrome in headless mode does not produce
+ * animation frames, so the Phaser loop is stopped and stepped by hand with a
+ * fixed timestep - which also makes every check deterministic.
+ */
+(function () {
+  var out = document.getElementById('selftest-result');
+  var results = [];
+  var notes = [];
+
+  function check(name, cond, detail) {
+    results.push((cond ? 'PASS  ' : 'FAIL  ') + name + (detail !== undefined ? '   [' + detail + ']' : ''));
+    return !!cond;
+  }
+  function note(msg) { notes.push(msg); }
+
+  var trace = [];
+  function snap(label) {
+    try {
+      var gs = window.game.scene.getScene('Game');
+      trace.push(label + ': pos=' + Math.round(gs.player.x) + ',' + Math.round(gs.player.y) +
+        ' lives=' + gs.lives + ' dying=' + gs.playerDying + ' big=' + gs.player.isBig +
+        ' invuln=' + gs.player.invulnerable + ' coins=' + gs.coinCount + ' score=' + gs.score +
+        ' enemies=' + gs.enemyGroup.getChildren().length + ' items=' + gs.itemGroup.getChildren().length);
+    } catch (e) { trace.push(label + ': <no scene>'); }
+  }
+
+  var simTime = 0;
+  // Phaser's TweenManager measures its own delta with Date.now(), which does
+  // not move while the suite steps the game synchronously - so the clock is
+  // virtualised here too, otherwise no tween would ever finish.
+  var fakeNow = Date.now();
+  Date.now = function () { return Math.round(fakeNow); };
+
+  function steps(n) {
+    for (var i = 0; i < n; i++) {
+      simTime += 16.666;
+      fakeNow += 16.666;
+      window.game.loop.time = simTime;
+      window.game.loop.delta = 16.666;
+      window.game.step(simTime, 16.666);
+    }
+  }
+  function input(o) {
+    o = o || {};
+    return function () {
+      return {
+        left: !!o.left, right: !!o.right, run: !!o.run,
+        jumpDown: !!o.jump, jumpPressed: !!o.jump,
+        pausePressed: !!o.pause,
+      };
+    };
+  }
+  function gameScene() { return window.game.scene.getScene('Game'); }
+  function activeScenes() {
+    return window.game.scene.scenes.filter(function (s) { return s.scene.isActive(); })
+      .map(function (s) { return s.scene.key; }).join('+');
+  }
+  function teleport(gs, x, y) {
+    gs.player.x = x;
+    gs.player.y = y;
+    gs.player.body.reset(x, y);
+  }
+
+  /* ---------- level geometry sanity (no simulation needed) ---------- */
+  function analyseLevel(level) {
+    var chars = DataStore.getCharacterList();
+    var g = level.gravity;
+    var weakest = null;
+    chars.forEach(function (c) {
+      var jh = (c.stats.jumpVelocity * c.stats.jumpVelocity) / (2 * g);
+      if (!weakest || jh < weakest.jh) weakest = { id: c.id, jh: jh, stats: c.stats };
+    });
+    var airtime = 2 * weakest.stats.jumpVelocity / g;
+    var walkReach = weakest.stats.walkSpeed * airtime;
+    note('najslabiji skok: ' + weakest.id + ' visina ' + Math.round(weakest.jh) +
+      'px, domet hodanjem ' + Math.round(walkReach) + 'px');
+
+    // gaps between ground segments
+    var segs = (level.ground || []).slice().sort(function (a, b) { return a.x - b.x; });
+    var badGaps = [];
+    for (var i = 1; i < segs.length; i++) {
+      var gapStart = segs[i - 1].x + segs[i - 1].width;
+      var gapW = segs[i].x - gapStart;
+      if (gapW > walkReach - 10) badGaps.push('x=' + gapStart + ' sirina ' + gapW);
+    }
+    check('sve rupe preskocive i najslabijim likom', badGaps.length === 0, badGaps.join(' | ') || 'ok');
+
+    // every platform/column top should be reachable from some lower surface
+    var surfaces = [];
+    (level.ground || []).forEach(function (s) { surfaces.push({ x1: s.x, x2: s.x + s.width, top: s.y }); });
+    (level.platforms || []).forEach(function (p) { surfaces.push({ x1: p.x, x2: p.x + p.width, top: p.y }); });
+    (level.columns || []).forEach(function (c) { surfaces.push({ x1: c.x, x2: c.x + c.width, top: c.y }); });
+
+    var unreachable = [];
+    (level.platforms || []).concat(level.columns || []).forEach(function (p) {
+      var top = p.y;
+      var ok = surfaces.some(function (s) {
+        if (s === p) return false;
+        if (s.top <= top) return false;                       // must be lower than the target
+        if (s.top - top > weakest.jh - 12) return false;      // within jump height
+        var horizGap = Math.max(p.x - s.x2, s.x1 - (p.x + p.width));
+        return horizGap < 160;                                // close enough to jump across
+      });
+      if (!ok) unreachable.push('x=' + p.x + ' y=' + p.y);
+    });
+    check('sve platforme dohvatljive skokom', unreachable.length === 0, unreachable.join(' | ') || 'ok');
+
+    // question blocks must be bumpable: block bottom above standing head, within jump
+    var badBlocks = [];
+    (level.questionBlocks || []).forEach(function (qb) {
+      var below = surfaces.filter(function (s) {
+        return s.top > qb.y && qb.x > s.x1 - 20 && qb.x < s.x2 + 20;
+      }).sort(function (a, b) { return a.top - b.top; })[0];
+      if (!below) { badBlocks.push('x=' + qb.x + ' (nema podloge ispod)'); return; }
+      var headWhenStanding = below.top - 96;
+      var blockBottom = qb.y + 24;
+      if (blockBottom > headWhenStanding - 20) badBlocks.push('x=' + qb.x + ' prenisko');
+      else if (blockBottom < headWhenStanding - weakest.jh) badBlocks.push('x=' + qb.x + ' previsoko');
+    });
+    check('svi upitnik-blokovi udarivi odozdo', badBlocks.length === 0, badBlocks.join(' | ') || 'ok');
+
+    // enemies must patrol on solid ground
+    var badEnemies = [];
+    (level.enemies || []).forEach(function (e) {
+      var r = e.range || 0;
+      var onGround = (level.ground || []).some(function (s) {
+        return e.x - r >= s.x - 5 && e.x + r <= s.x + s.width + 5;
+      });
+      if (!onGround) badEnemies.push(e.type + '@' + e.x);
+    });
+    check('neprijatelji patroliraju po tlu (ne u rupe)', badEnemies.length === 0, badEnemies.join(' | ') || 'ok');
+  }
+
+  /* ---------- gameplay simulation ---------- */
+  function runSim() {
+    var gs;
+    try {
+      check('boot -> glavni izbornik', activeScenes() === 'MainMenu', activeScenes());
+      check('ucitani likovi iz JSON-a', DataStore.getCharacterList().length >= 1, DataStore.getCharacterList().length + ' likova');
+      check('ucitani leveli iz JSON-a', DataStore.getLevelList().length >= 1, DataStore.getLevelList().length + ' levela');
+      check('renderer aktivan', !!window.game.renderer, window.game.renderer.type === Phaser.WEBGL ? 'WEBGL' : 'CANVAS');
+
+      analyseLevel(DataStore.getLevelData('vrbovec-centar'));
+
+      var allChars = DataStore.getCharacterList();
+      // The core gameplay checks hold the jump button a lot, so they run with a
+      // character that has no special move bound to it.
+      var plainChar = allChars.filter(function (c) {
+        return !c.ability || c.ability.type === 'none';
+      })[0] || allChars[0];
+      var otherChar = allChars.filter(function (c) { return c.id !== plainChar.id; })[0] || plainChar;
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      window.game.scene.stop('MainMenu');
+      steps(5);
+      gs = gameScene();
+      check('level scena pokrenuta', activeScenes() === 'Game', activeScenes());
+      check('staticna geometrija stvorena', gs.solids.getChildren().length > 20, gs.solids.getChildren().length + ' tijela');
+      check('neprijatelji stvoreni', gs.enemyGroup.getChildren().length === 8, gs.enemyGroup.getChildren().length);
+      check('novcici stvoreni', gs.coinGroup.getChildren().length > 30, gs.coinGroup.getChildren().length);
+      check('znamenitosti nacrtane', (gs.level.landmarks || []).length === 5, (gs.level.landmarks || []).length);
+
+      // 1. gravity + ground collision
+      gs.inputManager.getState = input({});
+      steps(60);
+      check('igrac pada i stane na tlo', gs.player.body.blocked.down, 'y=' + Math.round(gs.player.y));
+
+      // 2. walking
+      var x0 = gs.player.x;
+      gs.inputManager.getState = input({ right: true });
+      steps(60);
+      var walked = gs.player.x - x0;
+      check('hodanje udesno', walked > 120 && walked < 260, Math.round(walked) + 'px/s');
+
+      // 3. running is faster than walking
+      teleport(gs, 200, 600);
+      steps(10);
+      var x1 = gs.player.x;
+      gs.inputManager.getState = input({ right: true, run: true });
+      steps(60);
+      var ran = gs.player.x - x1;
+      check('trcanje brze od hodanja', ran > walked + 50, Math.round(ran) + 'px/s');
+
+      // 4. jump height roughly matches the character stats
+      teleport(gs, 300, 600);
+      gs.inputManager.getState = input({});
+      steps(20);
+      var groundY = gs.player.y;
+      gs.inputManager.getState = input({ jump: true });
+      steps(2);
+      gs.inputManager.getState = input({});
+      var peak = groundY;
+      for (var i = 0; i < 60; i++) { steps(1); if (gs.player.y < peak) peak = gs.player.y; }
+      var jumpH = groundY - peak;
+      check('visina skoka razumna', jumpH > 100 && jumpH < 190, Math.round(jumpH) + 'px');
+
+      snap('nakon skoka');
+
+      // sanity: do tweens advance at all under manual stepping?
+      var probeObj = { v: 0 };
+      gs.tweens.add({ targets: probeObj, v: 100, duration: 200 });
+      steps(30);
+      check('tweenovi napreduju', probeObj.v > 90, 'v=' + probeObj.v.toFixed(1));
+
+      // 5. coin pickup
+      gs.inputManager.getState = input({});
+      var freeCoin = gs.coinGroup.getChildren().filter(function (c) {
+        return c.body && c.body.enable && c.x > 3000;
+      })[0];
+      var coinsBefore = gs.coinCount;
+      teleport(gs, freeCoin.x, freeCoin.y);
+      steps(4);
+      check('skupljanje novcica', gs.coinCount === coinsBefore + 1, coinsBefore + ' -> ' + gs.coinCount);
+      snap('nakon novcica');
+
+      // 6. question block bump -> coin
+      var qb = gs.questionBlocks[0];
+      var scoreBefore = gs.score;
+      teleport(gs, qb.x, gs.level.ground[0].y - 60);
+      gs.inputManager.getState = input({ jump: true });
+      steps(40);
+      check('udarac u upitnik-blok (novcic)', qb.used && gs.score > scoreBefore, 'score=' + gs.score);
+      snap('nakon bloka');
+
+      // A body that is teleported so that it already overlaps static geometry
+      // is never pushed back out by Arcade - it falls straight through. Every
+      // spawn/respawn point in the game must therefore sit clear of the ground,
+      // and the test teleports the same way a real spawn would.
+      var groundTop = gs.level.ground[0].y;
+      [200, 480, 1180, 2000].forEach(function (px) {
+        teleport(gs, px, groundTop - 60);
+        var landed = false;
+        for (var k = 0; k < 25; k++) {
+          steps(1);
+          if (gs.player.body.blocked.down) { landed = true; break; }
+        }
+        if (!landed) trace.push('  probe x=' + px + ' NIJE sletio y=' + Math.round(gs.player.y));
+      });
+      check('igrac slijece na tlo na svim pozicijama', !gs.playerDying, 'dying=' + gs.playerDying);
+
+      // 7. mushroom block -> power up
+      var mushBlock = null;
+      gs.questionBlocks.forEach(function (b) { if (b.itemType === 'mushroom') mushBlock = b; });
+      teleport(gs, mushBlock.x, groundTop - 60);
+      gs.inputManager.getState = input({ jump: true });
+      steps(40);
+      snap('nakon gljiva-bloka');
+      var mushroomSpawned = gs.itemGroup.getChildren().length > 0;
+      check('gljiva iskace iz bloka', mushBlock.used && mushroomSpawned, 'items=' + gs.itemGroup.getChildren().length);
+      gs.inputManager.getState = input({});
+      var item = gs.itemGroup.getChildren()[0];
+      if (item) { teleport(gs, item.x, item.y); steps(6); }
+      check('gljiva povecava igraca', gs.player.isBig === true, 'isBig=' + gs.player.isBig);
+      snap('nakon gljive');
+
+      // 8. stomping an enemy
+      var enemy = gs.enemyGroup.getChildren().filter(function (e) { return !e.dead; })[0];
+      var enemiesBefore = gs.enemyGroup.getChildren().length;
+      var scoreBeforeStomp = gs.score;
+      teleport(gs, enemy.x, enemy.y - 90);
+      gs.player.body.setVelocityY(300);
+      steps(12);
+      check('gazenje neprijatelja', gs.score > scoreBeforeStomp, 'score +' + (gs.score - scoreBeforeStomp));
+      steps(40);
+      check('zgazeni neprijatelj nestaje', gs.enemyGroup.getChildren().length < enemiesBefore,
+        enemiesBefore + ' -> ' + gs.enemyGroup.getChildren().length + ', active=' + enemy.active +
+        ', alpha=' + enemy.alpha.toFixed(2) + ', scaleY=' + enemy.scaleY.toFixed(2) +
+        ', tweens=' + gs.tweens.getTweensOf(enemy).length + ', dead=' + enemy.dead);
+      snap('nakon gazenja');
+
+      // 9. side hit while big -> shrink instead of dying
+      var enemy2 = gs.enemyGroup.getChildren().filter(function (e) { return !e.dead; })[0];
+      gs.player.invulnerable = false;
+      gs.player.invulnTimer = 0;
+      teleport(gs, enemy2.x - 24, enemy2.y - 30);
+      steps(8);
+      check('udarac sa strane skida power-up (ne ubija)', gs.player.isBig === false && !gs.playerDying,
+        'isBig=' + gs.player.isBig + ' dying=' + gs.playerDying);
+
+      // 10. checkpoint
+      gs.player.invulnerable = false;
+      teleport(gs, 3100, 600);
+      steps(4);
+      check('kontrolna tocka aktivirana', gs.checkpointIndex >= 0 && !!gs.respawnPoint,
+        'index=' + gs.checkpointIndex);
+
+      // 11. falling into a pit costs a life and respawns at the checkpoint
+      var livesBefore = gs.lives;
+      var savedRespawn = gs.respawnPoint;
+      teleport(gs, 1660, 880);
+      steps(8);
+      check('pad u rupu pokrece smrt', gs.playerDying === true, 'dying=' + gs.playerDying);
+      steps(110);
+      gs = gameScene();
+      check('zivot oduzet i level restartan', gs.lives === livesBefore - 1 && !!gs.player,
+        'lives ' + livesBefore + ' -> ' + gs.lives);
+      check('respawn na kontrolnoj tocki', Math.abs(gs.player.x - savedRespawn.x) < 60,
+        'x=' + Math.round(gs.player.x) + ' cp=' + savedRespawn.x);
+
+      // 12. pause / resume
+      gs.inputManager.getState = input({ pause: true });
+      steps(2);
+      var paused = activeScenes().indexOf('Pause') !== -1;
+      check('pauza otvara izbornik', paused, activeScenes());
+      if (paused) {
+        window.game.scene.getScene('Pause').resumeGame();
+        steps(3);
+        check('nastavak nakon pauze', activeScenes() === 'Game', activeScenes());
+        gs = gameScene();
+        check('touch kontrole ponovo aktivne', !!gs.inputManager, String(!!gs.inputManager));
+      }
+
+      // 13. reaching the flag completes the level
+      gs.inputManager.getState = input({});
+      teleport(gs, gs.level.flag.x, gs.level.flag.y - 150);
+      steps(20);
+      check('zastava detektirana', gs.levelComplete === true, 'complete=' + gs.levelComplete);
+      steps(120);
+      check('prelazak na ekran zavrsenog levela', activeScenes() === 'LevelComplete', activeScenes());
+      check('rezultat spremljen u localStorage', !!SaveManager.getHighScore('vrbovec-centar'),
+        JSON.stringify(SaveManager.getHighScore('vrbovec-centar')));
+
+      // 14. last life lost -> game over screen
+      window.game.scene.stop('LevelComplete');
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: otherChar.id, lives: 1 });
+      steps(6);
+      gs = gameScene();
+      check('drugi lik se ucitava', gs.player.characterData.id === otherChar.id, gs.player.characterData.id);
+      gs.inputManager.getState = input({});
+      teleport(gs, 1660, 880);
+      steps(10);
+      steps(110);
+      check('zadnji zivot -> kraj igre', activeScenes() === 'GameOver', activeScenes());
+
+      // 15. special abilities defined in data/characters.json
+      var teleChar = allChars.filter(function (c) { return c.ability && c.ability.type === 'teleport'; })[0];
+      if (teleChar) {
+        window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: teleChar.id });
+        steps(6);
+        gs = gameScene();
+        gs.inputManager.getState = input({});
+        teleport(gs, 300, gs.level.ground[0].y - 60);
+        steps(20);
+        gs.inputManager.getState = input({ jump: true });
+        steps(1);
+        gs.inputManager.getState = input({});
+        steps(8);
+        var beforeBlink = gs.player.x;
+        gs.inputManager.getState = input({ jump: true });
+        steps(1);
+        gs.inputManager.getState = input({});
+        var jumped = gs.player.x - beforeBlink;
+        check('teleportacija pomice lika naprijed', jumped > 80,
+          Math.round(jumped) + 'px u jednom frameu');
+        steps(90);
+        check('teleportacija ne baca lika kroz teren', !gs.playerDying && gs.player.body.blocked.down,
+          'y=' + Math.round(gs.player.y) + ' dying=' + gs.playerDying);
+      }
+
+      var magnetChar = allChars.filter(function (c) { return c.ability && c.ability.type === 'magnet'; })[0];
+      if (magnetChar) {
+        window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: magnetChar.id });
+        steps(6);
+        gs = gameScene();
+        gs.inputManager.getState = input({});
+        var target = gs.coinGroup.getChildren().filter(function (c) {
+          return c.body && c.body.enable && c.x > 3900 && c.x < 4200;
+        })[0];
+        var startDist = 200;
+        teleport(gs, target.x - startDist, gs.level.ground[2].y - 60);
+        steps(4);
+        var distBefore = Math.abs(target.x - gs.player.x);
+        steps(14);
+        var collected = !target.body || !target.body.enable;
+        var distAfter = collected ? 0 : Math.abs(target.x - gs.player.x);
+        check('magnet privlaci novcice', collected || distAfter < distBefore - 20,
+          'udaljenost ' + Math.round(distBefore) + ' -> ' + Math.round(distAfter) +
+          (collected ? ' (pokupljen)' : ''));
+      }
+
+      // 16. no DOM leftovers from the input manager
+      var touchRoots = document.querySelectorAll('#touch-controls-root').length;
+      check('touch kontrole ociscene nakon scene', touchRoots <= 1, touchRoots + ' root elemenata');
+
+      // 16. mobile: on-screen buttons really get built on a touch device
+      try {
+        Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true });
+        var overScene = window.game.scene.getScene('GameOver');
+        var im = new InputManager(overScene);
+        im.create();
+        var root = document.getElementById('touch-controls-root');
+        var buttons = root ? root.querySelectorAll('.im-btn').length : 0;
+        check('touch tipke se stvaraju na mobitelu', buttons >= 5, buttons + ' tipki');
+        check('overlay za rotaciju postoji', !!document.getElementById('orientation-overlay'),
+          String(!!document.getElementById('orientation-overlay')));
+        var st = im.getState();
+        check('getState vraca ispravan oblik',
+          typeof st.left === 'boolean' && typeof st.jumpPressed === 'boolean' &&
+          typeof st.run === 'boolean' && typeof st.pausePressed === 'boolean',
+          JSON.stringify(st));
+        im.destroy();
+        check('destroy uklanja touch tipke', !document.getElementById('touch-controls-root'),
+          String(!document.getElementById('touch-controls-root')));
+      } catch (e) {
+        check('touch tipke se stvaraju na mobitelu', false, e.message);
+      }
+    } catch (e) {
+      rec(window.__errors, 'SIM EXCEPTION: ' + e.message + ' | ' + (e.stack || '').split('\n')[1]);
+      results.push('FAIL  simulacija prekinuta iznimkom');
+    }
+
+    finish();
+  }
+
+  function finish() {
+    var failed = results.filter(function (r) { return r.indexOf('FAIL') === 0; }).length;
+    var lines = ['===SELFTEST==='];
+    lines = lines.concat(results);
+    if (notes.length) { lines.push('--- info ---'); lines = lines.concat(notes); }
+    if (trace.length) { lines.push('--- trag ---'); lines = lines.concat(trace); }
+    lines.push('--- greske (' + window.__errors.length + ') ---');
+    window.__errors.forEach(function (e) { lines.push('  ' + e); });
+    if (window.__warns.length) {
+      lines.push('--- upozorenja (' + window.__warns.length + ') ---');
+      window.__warns.slice(0, 8).forEach(function (e) { lines.push('  ' + e); });
+    }
+    lines.push('REZULTAT: ' + (results.length - failed) + '/' + results.length + ' prolaza, ' +
+      window.__errors.length + ' JS gresaka');
+    lines.push('===END===');
+    out.textContent = lines.join('\n');
+    document.title = failed === 0 && window.__errors.length === 0 ? 'SELFTEST_OK' : 'SELFTEST_FAIL';
+  }
+
+  var attempts = 0;
+  function waitForMenu() {
+    attempts++;
+    try { steps(3); } catch (e) { rec(window.__errors, 'boot step: ' + e.message); }
+    var ready = false;
+    try {
+      ready = !!(DataStore.levels && DataStore.characters &&
+        window.game.scene.getScene('MainMenu').scene.isActive());
+    } catch (e) { ready = false; }
+    if (ready || attempts > 400) runSim();
+    else setTimeout(waitForMenu, 40);
+  }
+
+  setTimeout(function () {
+    try { window.localStorage.removeItem('vrbovecBrosSave_v1'); } catch (e) {}
+    simTime = performance.now();
+    window.game.loop.stop();
+    waitForMenu();
+  }, 200);
+})();
+</script>
+</body>
+</html>
+

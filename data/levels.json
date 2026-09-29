@@ -1,0 +1,14 @@
+{
+  "levels": [
+    {
+      "id": "vrbovec-centar",
+      "name": "Vrbovec Centar",
+      "file": "levels/vrbovec-centar.json",
+      "thumbnail": "assets/backgrounds/vrbovec-square.jpg",
+      "background": "vrbovec_day",
+      "music": null,
+      "unlockOrder": 1,
+      "parTime": 150
+    }
+  ]
+}
