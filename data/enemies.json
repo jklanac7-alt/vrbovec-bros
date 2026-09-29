@@ -37,6 +37,19 @@
       "points": 200,
       "behavior": "patrol",
       "stompable": true
+    },
+    "flyer": {
+      "name": "Vrana",
+      "color": "#3c3f4a",
+      "colorShade": "#23252d",
+      "outline": "#1a1a1a",
+      "width": 40,
+      "height": 34,
+      "speed": 110,
+      "bobRange": 90,
+      "points": 250,
+      "behavior": "fly",
+      "stompable": true
     }
   }
 }

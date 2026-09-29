@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8" />
+<base href="../" />
+<title>diag</title>
+<style>html,body{margin:0;background:#111}#game-container{position:fixed;inset:0;opacity:.2}#game{width:100%;height:100%}
+#selftest-result{position:fixed;inset:0;z-index:9;color:#8f8;font:12px/1.4 monospace;white-space:pre-wrap;background:#000c;padding:8px;overflow:auto}</style>
+</head>
+<body>
+  <div id="game-container"><div id="game"></div></div>
+  <div id="boot-loading" style="display:none"><div id="boot-bar-fill"></div></div>
+  <pre id="selftest-result">PENDING</pre>
+<script>
+window.__errors = [];
+window.addEventListener('error', function (e) { window.__errors.push('JS ERROR: ' + e.message + ' @' + (e.filename||'').split('/').pop() + ':' + e.lineno); });
+var _err = console.error;
+console.error = function () { window.__errors.push('console.error: ' + Array.prototype.map.call(arguments, String).join(' ')); _err.apply(console, arguments); };
+</script>
+  <script src="lib/phaser.min.js"></script>
+  <script src="src/systems/SaveManager.js"></script>
+  <script src="src/systems/DataStore.js"></script>
+  <script src="src/systems/InputManager.js"></script>
+  <script src="src/objects/Landmarks.js"></script>
+  <script src="src/objects/TileRenderer.js"></script>
+  <script src="src/objects/Player.js"></script>
+  <script src="src/objects/Enemy.js"></script>
+  <script src="src/objects/Collectibles.js"></script>
+  <script src="src/objects/Obstacles.js"></script>
+  <script src="src/ui/UIKit.js"></script>
+  <script src="src/ui/HUD.js"></script>
+  <script src="src/ui/Background.js"></script>
+  <script src="src/scenes/BootScene.js"></script>
+  <script src="src/scenes/PreloadScene.js"></script>
+  <script src="src/scenes/MainMenuScene.js"></script>
+  <script src="src/scenes/CharacterSelectScene.js"></script>
+  <script src="src/scenes/LevelSelectScene.js"></script>
+  <script src="src/scenes/GameScene.js"></script>
+  <script src="src/scenes/PauseScene.js"></script>
+  <script src="src/scenes/GameOverScene.js"></script>
+  <script src="src/scenes/LevelCompleteScene.js"></script>
+  <script src="src/main.js"></script>
+<script>
+(function () {
+  var out = document.getElementById('selftest-result');
+  var L = [];
+  function p(s) { L.push(s); out.textContent = L.join('\n'); }
+  var simTime = 0, fakeNow = Date.now();
+  var realNow = Date.now;
+  Date.now = function () { return Math.round(fakeNow); };
+  function steps(n) {
+    for (var i = 0; i < n; i++) {
+      simTime += 16.666; fakeNow += 16.666;
+      window.game.loop.time = simTime; window.game.loop.delta = 16.666;
+      window.game.step(simTime, 16.666);
+    }
+  }
+
+  /* Headless Chrome renders WebGL through SwiftShader on the CPU, and this
+   * level redraws every enemy and the player as fresh Graphics each frame.
+   * Drawing is what makes a whole-level playthrough take minutes, and nothing
+   * in the simulation depends on it (cameras update in the UPDATE phase, not
+   * in render), so the draw pass is skipped while the bot plays.
+   */
+  var realSceneRender = null;
+  function renderOff() {
+    if (realSceneRender) return;
+    realSceneRender = window.game.scene.render;
+    window.game.scene.render = function () {};
+  }
+  function renderOn() {
+    if (!realSceneRender) return;
+    window.game.scene.render = realSceneRender;
+    realSceneRender = null;
+  }
+  function gs() { return window.game.scene.getScene('Game'); }
+  function activeScenes() {
+    return window.game.scene.scenes.filter(function (s) { return s.scene.isActive(); })
+      .map(function (s) { return s.scene.key; }).join('+');
+  }
+
+  /* Same bot as the selftest, but it narrates where it gets to. */
+  function autoplay(opts) {
+    opts = opts || {};
+    var budget = opts.ticks || 7000;
+    window.game.scene.start('Game', {
+      levelId: 'vrbovec-centar', characterId: opts.characterId, lives: opts.lives || 9,
+    });
+    steps(8);
+    renderOff();
+    var st = { left: false, right: true, run: opts.run !== false, jump: false, pressed: false };
+    var botState = function () {
+      return { left: st.left, right: st.right, run: st.run,
+        jumpDown: st.jump, jumpPressed: st.pressed, pausePressed: false };
+    };
+    var maxX = 0, deaths = 0, stall = 0, jumpLock = 0, lastX = -1;
+    var wasDying = false, grown = false, result = 'istekao budzet', deathSpots = [];
+    var ring = [], traceOut = [];
+
+    for (var t = 0; t < budget; t++) {
+      var s = gs();
+      if (!s || !s.scene.isActive()) {
+        if (activeScenes().indexOf('GameOver') !== -1) { result = 'GAME OVER'; break; }
+        if (activeScenes().indexOf('LevelComplete') !== -1) { result = 'prosao'; break; }
+        steps(1); continue;
+      }
+      if (!s.player || !s.player.body) { steps(1); continue; }
+      if (s.inputManager && s.inputManager.getState !== botState) {
+        s.inputManager.getState = botState; grown = false;
+      }
+      if (opts.big && !grown && s.player.body.blocked.down) { s.player.grow(); grown = true; }
+
+      var pl = s.player, b = pl.body;
+      if (pl.x > maxX) maxX = pl.x;
+      if (s.levelComplete) { result = 'prosao'; steps(140); break; }
+      if (s.playerDying) {
+        if (!wasDying) {
+          deaths++; deathSpots.push(Math.round(pl.x)); wasDying = true;
+          if (opts.trace && deaths >= 2 && deaths <= 3) traceOut.push('  smrt #' + deaths + ' @' + Math.round(pl.x) +
+            ' tragovi: ' + ring.slice().join(' '));
+        }
+        st.pressed = false; st.jump = false; steps(1); continue;
+      }
+      wasDying = false;
+      if (opts.trace) {
+        ring.push(Math.round(pl.x) + ',' + Math.round(pl.y) + (onGround ? 'G' : 'a'));
+        if (ring.length > 26) ring.shift();
+      }
+
+      var onGround = b.blocked.down || b.touching.down;
+      var want = false;
+      if (b.blocked.right) want = true;
+      // Jump only for a genuine pit. Probing a thin strip at foot level made
+      // the bot leap off the top of every column and platform, which sent it
+      // flying into whatever was beyond; a tall probe sees the ground further
+      // below and lets it simply walk off the edge like a player would.
+      if (onGround && s.solidBoxesIn(b.right + 4, b.bottom + 4, 44, 260).length === 0) want = true;
+      s.enemyGroup.getChildren().forEach(function (e) {
+        if (e.dead || !e.body) return;
+        if (e.body.left > b.right - 10 && e.body.left < b.right + 130 && Math.abs(e.y - pl.y) < 90) want = true;
+      });
+      // Hazards are jumped at the last moment on purpose: leaving too early
+      // lands you in the middle of the spikes instead of past them.
+      s.hazardGroup.getChildren().forEach(function (h) {
+        if (!h.body || !onGround) return;
+        if (h.body.left > b.right + 4 && h.body.left < b.right + 40 && h.body.top > b.top) want = true;
+      });
+
+      if (pl.x <= lastX + 0.25) stall++; else stall = 0;
+      lastX = pl.x;
+      if (stall > 10) want = true;
+      if (stall > 130) {
+        var sens = s.goal.sensor.body;
+        result = 'ZAGLAVIO x=' + Math.round(pl.x) + ' y=' + Math.round(pl.y) +
+          ' v=' + Math.round(b.velocity.x) + ',' + Math.round(b.velocity.y) +
+          ' blocked=' + (b.blocked.left?'L':'') + (b.blocked.right?'R':'') + (b.blocked.up?'U':'') + (b.blocked.down?'D':'') +
+          ' complete=' + s.levelComplete + ' dying=' + s.playerDying +
+          ' | tijelo ' + Math.round(b.left) + '-' + Math.round(b.right) + ' x ' + Math.round(b.top) + '-' + Math.round(b.bottom) +
+          ' | senzor ' + Math.round(sens.left) + '-' + Math.round(sens.right) + ' x ' + Math.round(sens.top) + '-' + Math.round(sens.bottom) +
+          ' enable=' + sens.enable +
+          ' | svijet ' + s.physics.world.bounds.width;
+        break;
+      }
+
+      // The lock only stops mid-air re-presses (which would burn a double
+      // jump or a teleport); once back on the ground the bot may jump again
+      // immediately, the way a player can when two obstacles come in a row.
+      if (jumpLock > 0) { jumpLock--; if (!onGround) want = false; }
+      st.pressed = want;
+      st.jump = want || (jumpLock > 6);
+      if (want) jumpLock = 11;
+      steps(1);
+    }
+    renderOn();
+    return { result: result, maxX: Math.round(maxX), deaths: deaths, ticks: t,
+      deathSpots: deathSpots.slice(0, 12).join(','), trace: traceOut };
+  }
+
+  function run() {
+    try {
+      p('===DIAG===');
+      var t0 = realNow();
+      var lvl = DataStore.getLevelData('vrbovec-centar');
+      p('level: sirina=' + lvl.width + ' zastava=' + lvl.flag.x + ' protivnika=' + lvl.enemies.length);
+
+      // First: is any enemy stuck in geometry now?
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: 'fas' });
+      window.game.scene.stop('MainMenu');
+      steps(10);
+      var s = gs();
+      s.inputManager.getState = function () { return { left:false,right:false,run:false,jumpDown:false,jumpPressed:false,pausePressed:false }; };
+      steps(6);
+      var bad = [];
+      s.enemyGroup.getChildren().forEach(function (e) {
+        if (e.cfg.behavior === 'fly') return;
+        if (s.solidBoxesIn(e.body.left + 2, e.body.top + 2, e.body.width - 4, e.body.height - 4).length) {
+          bad.push(e.typeId + '@' + Math.round(e.x));
+        }
+      });
+      p('u zidu nakon spawna: ' + (bad.length ? bad.join(', ') : 'nijedan'));
+
+      renderOff();
+      var tracked = s.enemyGroup.getChildren().map(function (e) {
+        return { e: e, id: e.typeId + '@' + Math.round(e.x), min: e.x, max: e.x };
+      });
+      for (var w = 0; w < 600; w++) {
+        steps(1);
+        tracked.forEach(function (t) { if (t.e.active) { t.min = Math.min(t.min, t.e.x); t.max = Math.max(t.max, t.e.x); } });
+      }
+      p('kretanje kroz 10s:');
+      tracked.forEach(function (t) {
+        p('  ' + t.id + ' raspon=' + Math.round(t.max - t.min) + 'px behavior=' + t.e.cfg.behavior +
+          (t.e.active ? '' : ' [unisten]') +
+          (t.e.active && t.e.body.blocked.up ? ' *** U STROPU ***' : ''));
+      });
+      renderOn();
+      p('(' + Math.round((realNow() - t0) / 1000) + 's)');
+
+      ['fas', 'lisica', 'dvekune'].forEach(function (cid) {
+        var t1 = realNow();
+        var r = autoplay({ characterId: cid, trace: true });
+        p('bot ' + cid + ': ' + r.result + ' maxX=' + r.maxX + '/' + lvl.flag.x +
+          ' smrti=' + r.deaths + ' [' + r.deathSpots + '] tickova=' + r.ticks +
+          ' (' + Math.round((realNow() - t1) / 1000) + 's)');
+        r.trace.forEach(function (line) { p(line); });
+      });
+
+      var t2 = realNow();
+      var rb = autoplay({ characterId: 'fas', big: true, trace: true });
+      p('bot VELIKI: ' + rb.result + ' maxX=' + rb.maxX + '/' + lvl.flag.x +
+        ' smrti=' + rb.deaths + ' [' + rb.deathSpots + '] (' + Math.round((realNow() - t2) / 1000) + 's)');
+      rb.trace.forEach(function (line) { p(line); });
+
+      var t3 = realNow();
+      var rw = autoplay({ characterId: 'fas', run: false, ticks: 9000 });
+      p('bot HODANJE: ' + rw.result + ' maxX=' + rw.maxX + '/' + lvl.flag.x +
+        ' smrti=' + rw.deaths + ' [' + rw.deathSpots + '] (' + Math.round((realNow() - t3) / 1000) + 's)');
+
+      p('ukupno ' + Math.round((realNow() - t0) / 1000) + 's');
+      // ---- moving platform carry ----
+      p('--- nosenje na pokretnoj platformi ---');
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: 'fas' });
+      steps(10);
+      s = gs();
+      s.inputManager.getState = function () { return { left:false,right:false,run:false,jumpDown:false,jumpPressed:false,pausePressed:false }; };
+      s.player.setInvincible(600000);
+      var plat = s.movingPlatforms.filter(function (q) { return q.rangeX > 0; })[0];
+      steps(40);
+      s.player.x = plat.x; s.player.y = plat.body.top - 60;
+      s.player.body.reset(s.player.x, s.player.y);
+      steps(16);
+      p('  nakon doskoka: blocked.down=' + s.player.body.blocked.down +
+        ' rel=' + Math.round(s.player.x - plat.x) + '');
+      var carried = 0, grounded = 0, relMin = 0, relMax = 0;
+      var rel0 = s.player.x - plat.x;
+      var perFrame = [];
+      for (var q = 0; q < 40; q++) {
+        var pWas = plat.x, aWas = s.player.x;
+        steps(1);
+        if (q < 10) perFrame.push('plat=' + (plat.x - pWas).toFixed(2) + ' dx=' + plat.dx.toFixed(2) +
+          ' igrac=' + (s.player.x - aWas).toFixed(2) + ' iv=' + s.player.body.velocity.x.toFixed(0) +
+          ' ownVX=' + (s.player.ownVX||0).toFixed(0));
+        if (s.player.ridingPlatform) carried++;
+        if (s.player.body.blocked.down || s.player.body.touching.down) grounded++;
+        var rel = s.player.x - plat.x - rel0;
+        relMin = Math.min(relMin, rel); relMax = Math.max(relMax, rel);
+      }
+      p('  kroz 40 frameova: nosen=' + carried + ' na tlu=' + grounded +
+        ' odstupanje ' + Math.round(relMin) + '..' + Math.round(relMax) + 'px' +
+        ' | igrac y=' + Math.round(s.player.y) + ' platforma vrh=' + Math.round(plat.body.top) +
+        ' vx=' + Math.round(s.player.body.velocity.x) +
+        ' platv=' + Math.round(plat.body.velocity.x));
+      p('  po frameu (platforma/igrac): ' + perFrame.join(' '));
+
+      p('--- greske (' + window.__errors.length + ') ---');
+      window.__errors.slice(0, 10).forEach(function (e) { p('  ' + e); });
+      p('===END===');
+    } catch (e) {
+      p('EXCEPTION: ' + e.message + ' | ' + (e.stack || '').split('\n')[1]);
+      p('===END===');
+    }
+  }
+
+  var attempts = 0;
+  function wait() {
+    attempts++;
+    try { steps(3); } catch (e) {}
+    var ready = false;
+    try { ready = !!(DataStore.levels && DataStore.characters && window.game.scene.getScene('MainMenu').scene.isActive()); } catch (e) {}
+    if (ready || attempts > 400) run(); else setTimeout(wait, 40);
+  }
+  setTimeout(function () {
+    try { window.localStorage.removeItem('vrbovecBrosSave_v1'); } catch (e) {}
+    simTime = performance.now();
+    window.game.loop.stop();
+    wait();
+  }, 200);
+})();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ window.LevelCompleteScene = class LevelCompleteScene extends Phaser.Scene {
     this.timeLeft = data.timeLeft || 0;
     this.lives = data.lives || 3;
     this.nextLevelId = data.nextLevelId || null;
+    this.newRecord = !!data.newRecord;
   }
 
   create() {
@@ -30,8 +31,7 @@ window.LevelCompleteScene = class LevelCompleteScene extends Phaser.Scene {
     UIKit.label(this, w / 2, h / 2 - 20, 'Preostalo vrijeme: ' + this.timeLeft + ' (bonus ' + this.timeLeft * 10 + ')', 20, '#dff0ff');
     UIKit.label(this, w / 2, h / 2 + 18, 'UKUPNO: ' + this.score, 30, '#ffffff');
 
-    var hs = SaveManager.getHighScore(this.levelId);
-    if (hs && hs.score === this.score) {
+    if (this.newRecord) {
       UIKit.label(this, w / 2, h / 2 + 56, 'NOVI REKORD!', 22, '#3ad86b');
     }
 

@@ -85,17 +85,32 @@
         return container;
       }
 
-      var pal = itemType === 'mushroom' ? DataStore.items.mushroom : DataStore.items.extraLife;
-      g.fillStyle(col(pal.color), 1);
-      g.fillRoundedRect(-16, -10, 32, 22, 8);
-      g.fillStyle(col(pal.spotColor || '#ffffff'), 1);
-      g.fillCircle(-6, -4, 4);
-      g.fillCircle(7, -2, 3.5);
-      g.lineStyle(3, 0x1a1a1a, 1);
-      g.strokeRoundedRect(-16, -10, 32, 22, 8);
-      g.fillStyle(0xffe0c2, 1);
-      g.fillRoundedRect(-10, 8, 20, 10, 4);
-      g.strokeRoundedRect(-10, 8, 20, 10, 4);
+      var pal = DataStore.items[itemType] || DataStore.items.extraLife;
+      if (itemType === 'rakija') {
+        // A little bottle: unmistakably not a mushroom at a glance.
+        g.fillStyle(col(pal.color), 1);
+        g.fillRoundedRect(-11, -6, 22, 24, 5);
+        g.fillRect(-5, -18, 10, 14);
+        g.lineStyle(3, 0x1a1a1a, 1);
+        g.strokeRoundedRect(-11, -6, 22, 24, 5);
+        g.strokeRect(-5, -18, 10, 14);
+        g.fillStyle(0x8a3f1f, 1);
+        g.fillRect(-6, -22, 12, 6);
+        g.strokeRect(-6, -22, 12, 6);
+        g.fillStyle(col(pal.spotColor || '#ffffff'), 1);
+        g.fillRect(-7, 2, 5, 12);
+      } else {
+        g.fillStyle(col(pal.color), 1);
+        g.fillRoundedRect(-16, -10, 32, 22, 8);
+        g.fillStyle(col(pal.spotColor || '#ffffff'), 1);
+        g.fillCircle(-6, -4, 4);
+        g.fillCircle(7, -2, 3.5);
+        g.lineStyle(3, 0x1a1a1a, 1);
+        g.strokeRoundedRect(-16, -10, 32, 22, 8);
+        g.fillStyle(0xffe0c2, 1);
+        g.fillRoundedRect(-10, 8, 20, 10, 4);
+        g.strokeRoundedRect(-10, 8, 20, 10, 4);
+      }
 
       scene.physics.add.existing(container);
       container.body.setSize(32, 32);

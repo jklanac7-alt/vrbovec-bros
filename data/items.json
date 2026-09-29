@@ -1,5 +1,6 @@
 {
   "coin": { "points": 10, "color": "#f4c430", "colorShade": "#c99a1f" },
   "mushroom": { "effect": "grow", "color": "#d84f3a", "spotColor": "#ffffff" },
-  "extraLife": { "effect": "life", "color": "#3ad86b", "spotColor": "#ffffff" }
+  "extraLife": { "effect": "life", "color": "#3ad86b", "spotColor": "#ffffff" },
+  "rakija": { "effect": "invincible", "duration": 9000, "color": "#f0c070", "spotColor": "#fff4d8" }
 }

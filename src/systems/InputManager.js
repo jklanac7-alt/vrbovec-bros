@@ -183,6 +183,7 @@
         right: false,
         run: false,
         jump: false,
+        jumpPressedFlag: false, // set true on press, consumed on next getState()
         pausePressedFlag: false // set true on tap, consumed on next getState()
       };
 
@@ -212,11 +213,19 @@
         this._keyEsc = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
       }
 
-      // Orientation overlay: page-level singleton, persists across scenes/instances.
+      // Orientation overlay: page-level singleton, and so are its listeners.
+      // They used to be registered per InputManager, but addEventListener
+      // de-duplicates identical (type, listener) pairs, so every instance
+      // shared ONE registration and the first destroy() removed it for all of
+      // them. After that nothing listened for rotation any more: a player who
+      // died in portrait was left staring at an un-dismissable "rotate your
+      // device" overlay with no way out but reloading the page.
       ensureOrientationOverlay();
-      this._orientationHandlerBound = updateOrientationOverlayVisibility;
-      window.addEventListener('resize', this._orientationHandlerBound);
-      window.addEventListener('orientationchange', this._orientationHandlerBound);
+      if (!window.__vbOrientationBound) {
+        window.__vbOrientationBound = true;
+        window.addEventListener('resize', updateOrientationOverlayVisibility);
+        window.addEventListener('orientationchange', updateOrientationOverlayVisibility);
+      }
       updateOrientationOverlayVisibility();
 
       // Touch controls: created per-scene (destroyed in destroy()), only injected on touch devices.
@@ -256,7 +265,13 @@
       this._bindHold(btnLeft, function (v) { self._touch.left = v; });
       this._bindHold(btnRight, function (v) { self._touch.right = v; });
       this._bindHold(btnRun, function (v) { self._touch.run = v; });
-      this._bindHold(btnJump, function (v) { self._touch.jump = v; });
+      // Jump latches on press. Sampling the held flag once per frame lost any
+      // tap that started and ended between two getState() calls, which on a
+      // dropped frame silently ate the jump.
+      this._bindHold(btnJump, function (v) {
+        if (v && !self._touch.jump) self._touch.jumpPressedFlag = true;
+        self._touch.jump = v;
+      });
 
       // Pause is a tap (edge-triggered), not a hold.
       this._bindTap(btnPause, function () {
@@ -299,6 +314,10 @@
     }
 
     _bindTap(el, onTap) {
+      // pointerup and touchend both fire for a single touch on devices that
+      // support Pointer Events, so the tap is de-duplicated by timestamp
+      // rather than delivered twice.
+      var lastTap = 0;
       var down = function (e) {
         e.preventDefault();
         el.classList.add('im-active');
@@ -306,6 +325,9 @@
       var up = function (e) {
         e.preventDefault();
         el.classList.remove('im-active');
+        var now = (e && e.timeStamp) || Date.now();
+        if (now - lastTap < 60) return;
+        lastTap = now;
         onTap();
       };
       this._addPointerListener(el, 'pointerdown', down);
@@ -353,8 +375,10 @@
       if (this._touch.run) run = true;
       if (this._touch.jump) jumpDown = true;
 
-      // Touch jump edge detection (compare held state frame-to-frame)
-      var touchJumpJustDown = this._touch.jump && !this._prevJumpDown;
+      // Touch jump edge detection: the latch set on pointerdown is authoritative,
+      // the held-state comparison only backs it up.
+      var touchJumpJustDown = this._touch.jumpPressedFlag || (this._touch.jump && !this._prevJumpDown);
+      this._touch.jumpPressedFlag = false;
       this._prevJumpDown = this._touch.jump;
 
       var combinedJumpDown = jumpDown;
@@ -412,12 +436,11 @@
       }
       this._domRoot = null;
 
-      // Remove this instance's orientation listeners only (overlay element itself persists).
-      if (this._orientationHandlerBound) {
-        window.removeEventListener('resize', this._orientationHandlerBound);
-        window.removeEventListener('orientationchange', this._orientationHandlerBound);
-        this._orientationHandlerBound = null;
-      }
+      // The overlay and its listeners are page-level and deliberately outlive
+      // every InputManager - see create(). Re-evaluate it once here so a scene
+      // change never leaves a stale overlay covering the screen.
+      this._orientationHandlerBound = null;
+      updateOrientationOverlayVisibility();
     }
   };
 })();

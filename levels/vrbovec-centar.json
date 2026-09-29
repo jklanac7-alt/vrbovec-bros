@@ -1,23 +1,29 @@
 {
   "id": "vrbovec-centar",
   "name": "Vrbovec Centar",
-  "formatVersion": 1,
-  "width": 6400,
+  "formatVersion": 2,
+  "width": 11520,
   "height": 720,
   "tileSize": 64,
   "gravity": 1400,
-  "timeLimit": 200,
+  "timeLimit": 340,
   "background": "vrbovec_day",
   "playerStart": { "x": 120, "y": 560 },
   "checkpoints": [
     { "x": 3060, "y": 656 },
-    { "x": 4950, "y": 656 }
+    { "x": 4950, "y": 656 },
+    { "x": 6580, "y": 656 },
+    { "x": 8680, "y": 656 },
+    { "x": 10620, "y": 656 }
   ],
   "ground": [
     { "x": 0, "y": 656, "width": 1600, "height": 64, "type": "grass" },
     { "x": 1730, "y": 656, "width": 1150, "height": 64, "type": "grass" },
     { "x": 2990, "y": 656, "width": 1720, "height": 64, "type": "grass" },
-    { "x": 4860, "y": 656, "width": 1540, "height": 64, "type": "grass" }
+    { "x": 4860, "y": 656, "width": 1540, "height": 64, "type": "grass" },
+    { "x": 6500, "y": 656, "width": 700, "height": 64, "type": "grass" },
+    { "x": 7300, "y": 656, "width": 1940, "height": 64, "type": "grass" },
+    { "x": 9340, "y": 656, "width": 2180, "height": 64, "type": "grass" }
   ],
   "platforms": [
     { "x": 620, "y": 550, "width": 192, "height": 32, "type": "brick" },
@@ -31,13 +37,41 @@
     { "x": 4950, "y": 560, "width": 128, "height": 32, "type": "brick" },
     { "x": 5110, "y": 450, "width": 128, "height": 32, "type": "brick" },
     { "x": 5270, "y": 340, "width": 128, "height": 32, "type": "brick" },
-    { "x": 5560, "y": 546, "width": 192, "height": 32, "type": "brick" }
+    { "x": 5560, "y": 546, "width": 192, "height": 32, "type": "brick" },
+    { "x": 7900, "y": 546, "width": 128, "height": 32, "type": "stone" },
+    { "x": 7640, "y": 430, "width": 160, "height": 32, "type": "stone" },
+    { "x": 8060, "y": 440, "width": 128, "height": 32, "type": "stone" },
+    { "x": 10000, "y": 440, "width": 140, "height": 32, "type": "stone" },
+    { "x": 11060, "y": 430, "width": 150, "height": 32, "type": "stone" }
   ],
   "columns": [
     { "x": 1300, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
     { "x": 3760, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
     { "x": 4300, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" },
-    { "x": 5900, "y": 556, "width": 80, "height": 100, "type": "stoneColumn" }
+    { "x": 5900, "y": 556, "width": 80, "height": 100, "type": "stoneColumn" },
+    { "x": 9860, "y": 546, "width": 80, "height": 110, "type": "stoneColumn" }
+  ],
+  "movingPlatforms": [
+    { "x": 6980, "y": 430, "width": 120, "height": 26, "rangeX": 90, "rangeY": 0, "period": 3200, "type": "moving" },
+    { "x": 8280, "y": 380, "width": 130, "height": 26, "rangeX": 80, "rangeY": 0, "period": 4000, "type": "moving" },
+    { "x": 8440, "y": 300, "width": 120, "height": 26, "rangeX": 0, "rangeY": 50, "period": 3400, "phase": 0.5, "type": "moving" },
+    { "x": 10820, "y": 400, "width": 120, "height": 26, "rangeX": 0, "rangeY": 70, "period": 3000, "type": "moving" },
+    { "x": 11000, "y": 500, "width": 130, "height": 26, "rangeX": 80, "rangeY": 0, "period": 3600, "phase": 0.25, "type": "moving" }
+  ],
+  "fallingPlatforms": [
+    { "x": 6700, "y": 544, "width": 112, "height": 26 },
+    { "x": 6860, "y": 544, "width": 112, "height": 26 },
+    { "x": 8990, "y": 544, "width": 104, "height": 26 },
+    { "x": 9120, "y": 544, "width": 104, "height": 26 }
+  ],
+  "springs": [
+    { "x": 7440, "y": 656, "power": 1020 },
+    { "x": 10720, "y": 656, "power": 1020 }
+  ],
+  "hazards": [
+    { "x": 6760, "y": 628, "width": 96, "height": 28, "type": "spikes" },
+    { "x": 8980, "y": 636, "width": 180, "height": 20, "type": "mud" },
+    { "x": 9640, "y": 628, "width": 96, "height": 28, "type": "spikes" }
   ],
   "questionBlocks": [
     { "x": 480, "y": 486, "item": "coin" },
@@ -48,7 +82,13 @@
     { "x": 4400, "y": 486, "item": "coin" },
     { "x": 5330, "y": 170, "item": "coin" },
     { "x": 5830, "y": 486, "item": "extraLife" },
-    { "x": 6050, "y": 486, "item": "coin" }
+    { "x": 6050, "y": 486, "item": "coin" },
+    { "x": 7720, "y": 280, "item": "rakija" },
+    { "x": 7960, "y": 380, "item": "coin" },
+    { "x": 8560, "y": 486, "item": "mushroom" },
+    { "x": 10070, "y": 290, "item": "coin" },
+    { "x": 11300, "y": 486, "item": "coin" },
+    { "x": 11130, "y": 280, "item": "extraLife" }
   ],
   "coins": [
     { "x": 300, "y": 600 }, { "x": 360, "y": 600 },
@@ -65,24 +105,53 @@
     { "x": 4740, "y": 560 }, { "x": 4790, "y": 530 }, { "x": 4840, "y": 560 },
     { "x": 4990, "y": 510 }, { "x": 5150, "y": 400 }, { "x": 5310, "y": 290 },
     { "x": 5600, "y": 496 }, { "x": 5660, "y": 496 }, { "x": 5720, "y": 496 },
-    { "x": 6150, "y": 600 }, { "x": 6210, "y": 600 }
+    { "x": 6150, "y": 600 }, { "x": 6210, "y": 600 },
+    { "x": 6420, "y": 470 }, { "x": 6470, "y": 440 },
+    { "x": 6756, "y": 494 }, { "x": 6916, "y": 494 },
+    { "x": 6940, "y": 380 }, { "x": 7040, "y": 380 },
+    { "x": 7250, "y": 600 }, { "x": 7310, "y": 560 },
+    { "x": 7440, "y": 500 }, { "x": 7440, "y": 420 }, { "x": 7440, "y": 340 },
+    { "x": 7690, "y": 380 }, { "x": 7750, "y": 380 },
+    { "x": 7960, "y": 496 }, { "x": 8110, "y": 390 },
+    { "x": 8300, "y": 330 }, { "x": 8380, "y": 330 },
+    { "x": 8470, "y": 230 }, { "x": 8540, "y": 230 },
+    { "x": 8620, "y": 600 }, { "x": 8760, "y": 600 },
+    { "x": 9046, "y": 494 }, { "x": 9176, "y": 494 },
+    { "x": 9300, "y": 560 }, { "x": 9420, "y": 600 },
+    { "x": 9400, "y": 600 }, { "x": 9560, "y": 600 }, { "x": 9920, "y": 490 }, { "x": 10070, "y": 390 },
+    { "x": 10200, "y": 600 }, { "x": 10380, "y": 560 },
+    { "x": 10880, "y": 360 }, { "x": 10880, "y": 300 },
+    { "x": 11100, "y": 380 }, { "x": 11170, "y": 380 },
+    { "x": 10980, "y": 450 }, { "x": 11040, "y": 450 },
+    { "x": 11300, "y": 600 }, { "x": 11400, "y": 600 }
   ],
   "enemies": [
-    { "type": "patroller", "x": 900, "y": 600, "range": 180 },
+    { "type": "patroller", "x": 1000, "y": 600, "range": 140 },
     { "type": "hopper", "x": 1450, "y": 600 },
-    { "type": "patroller", "x": 2400, "y": 600, "range": 200 },
-    { "type": "charger", "x": 3250, "y": 600, "range": 200 },
-    { "type": "patroller", "x": 3950, "y": 600, "range": 150 },
-    { "type": "hopper", "x": 4960, "y": 600 },
-    { "type": "patroller", "x": 5700, "y": 600, "range": 150 },
-    { "type": "charger", "x": 6100, "y": 600, "range": 150 }
+    { "type": "patroller", "x": 2620, "y": 600, "range": 150 },
+    { "type": "charger", "x": 3150, "y": 600, "range": 120 },
+    { "type": "patroller", "x": 4000, "y": 600, "range": 120 },
+    { "type": "hopper", "x": 4900, "y": 600 },
+    { "type": "patroller", "x": 5470, "y": 600, "range": 55 },
+    { "type": "charger", "x": 6150, "y": 600, "range": 100 },
+    { "type": "patroller", "x": 7100, "y": 600, "range": 60 },
+    { "type": "charger", "x": 7600, "y": 600, "range": 110 },
+    { "type": "flyer", "x": 8950, "y": 430, "range": 110 },
+    { "type": "hopper", "x": 8480, "y": 600 },
+    { "type": "patroller", "x": 8850, "y": 600, "range": 60 },
+    { "type": "charger", "x": 9450, "y": 600, "range": 50 },
+    { "type": "flyer", "x": 11200, "y": 330, "range": 130 },
+    { "type": "charger", "x": 11240, "y": 600, "range": 45 }
   ],
   "landmarks": [
     { "type": "crkva", "x": 420, "y": 620, "scale": 0.72, "scrollFactor": 0.55, "solid": false },
     { "type": "kula", "x": 2050, "y": 620, "scale": 0.8, "scrollFactor": 0.6, "solid": false },
     { "type": "dvorac", "x": 3300, "y": 620, "scale": 0.7, "scrollFactor": 0.55, "solid": false },
     { "type": "lovrecina", "x": 5050, "y": 620, "scale": 0.75, "scrollFactor": 0.65, "solid": false },
-    { "type": "mauzolej", "x": 6150, "y": 620, "scale": 0.8, "scrollFactor": 0.6, "solid": false }
+    { "type": "mauzolej", "x": 6150, "y": 620, "scale": 0.8, "scrollFactor": 0.6, "solid": false },
+    { "type": "kula", "x": 7900, "y": 620, "scale": 0.7, "scrollFactor": 0.58, "solid": false },
+    { "type": "crkva", "x": 9400, "y": 620, "scale": 0.68, "scrollFactor": 0.52, "solid": false },
+    { "type": "dvorac", "x": 11100, "y": 620, "scale": 0.74, "scrollFactor": 0.6, "solid": false }
   ],
-  "flag": { "x": 6280, "y": 656, "height": 320 }
+  "flag": { "x": 11360, "y": 656, "height": 320 }
 }

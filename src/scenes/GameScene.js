@@ -17,6 +17,7 @@ window.GameScene = class GameScene extends Phaser.Scene {
     this.coinCount = data.coins || 0;
     this.respawnPoint = data.respawnPoint || null;
     this.checkpointIndex = data.checkpointIndex === undefined ? -1 : data.checkpointIndex;
+    this.justRespawned = !!data.justRespawned;
     this.levelComplete = false;
     this.playerDying = false;
   }
@@ -64,9 +65,17 @@ window.GameScene = class GameScene extends Phaser.Scene {
 
     this.itemGroup = this.add.group();
 
+    this.buildObstacles(level);
+
+    // Flyers ignore terrain, so they are kept out of the group that collides
+    // with the solids - otherwise a crow would be separated out of the air
+    // and pinned against the first platform it crossed.
     this.enemyGroup = this.add.group();
+    this.groundEnemyGroup = this.add.group();
     (level.enemies || []).forEach(function (e) {
-      self.enemyGroup.add(new Enemy(self, e.x, e.y, e.type, e.range));
+      var enemy = new Enemy(self, e.x, e.y, e.type, e.range);
+      self.enemyGroup.add(enemy);
+      if (enemy.cfg.behavior !== 'fly') self.groundEnemyGroup.add(enemy);
     });
 
     this.goal = TileRenderer.createFlag(this, level.flag);
@@ -78,8 +87,24 @@ window.GameScene = class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.solids, function (player, zone) {
       self.onSolidCollision(player, zone);
     });
-    this.physics.add.collider(this.enemyGroup, this.solids);
+    this.physics.add.collider(this.groundEnemyGroup, this.solids);
     this.physics.add.collider(this.itemGroup, this.solids);
+
+    // Trick platforms are solid for the player, enemies and loose power-ups alike.
+    [this.movingGroup, this.fallingGroup].forEach(function (group) {
+      self.physics.add.collider(self.groundEnemyGroup, group);
+      self.physics.add.collider(self.itemGroup, group);
+    });
+    this.physics.add.collider(this.player, this.movingGroup);
+    this.physics.add.collider(this.player, this.fallingGroup, function (player, plat) {
+      if (plat.body.enable && player.body.bottom <= plat.body.top + 14) plat.trigger();
+    });
+    this.physics.add.overlap(this.player, this.springGroup, function (player, spring) {
+      self.onSpring(player, spring);
+    });
+    this.physics.add.overlap(this.player, this.hazardGroup, function (player, hazard) {
+      self.onHazard(player, hazard);
+    });
     this.physics.add.overlap(this.player, this.coinGroup, function (player, coin) {
       self.onCoin(coin);
     });
@@ -101,21 +126,175 @@ window.GameScene = class GameScene extends Phaser.Scene {
     this.inputManager = new InputManager(this);
     this.inputManager.create();
 
-    this.events.once('shutdown', function () {
-      if (self.inputManager) self.inputManager.destroy();
-    });
-
     // Touch buttons are torn down while paused so they cannot overlap the
     // pause menu, and rebuilt when play resumes.
-    this.events.on('resume', function () {
+    var onResume = function () {
       if (!self.inputManager) {
         self.inputManager = new InputManager(self);
         self.inputManager.create();
       }
+    };
+    this.events.on('resume', onResume);
+
+    this.events.once('shutdown', function () {
+      if (self.inputManager) self.inputManager.destroy();
+      // Scene shutdown does not clear ordinary scene listeners, so without this
+      // the resume handler stacked up one copy per death/restart.
+      self.events.off('resume', onResume);
     });
+
+    /* A moment of grace after respawning. A checkpoint that happens to sit
+     * near a patrol route or a spike strip otherwise kills the player again
+     * the instant the level restarts, which burns every remaining life in a
+     * couple of seconds with nothing the player can do about it.
+     */
+    if (this.justRespawned) {
+      this.player.invulnerable = true;
+      this.player.invulnTimer = 1600;
+    }
 
     if (this.checkpointIndex >= 0) {
       this.hud.flash('KONTROLNA TOČKA');
+    }
+  }
+
+  /* Every hazard and trick platform in the level JSON, in one place.
+   * Empty sections are fine - a level that declares none simply gets none.
+   */
+  buildObstacles(level) {
+    var self = this;
+    this.movingPlatforms = [];
+    this.fallingPlatforms = [];
+    this.springs = [];
+    this.movingGroup = this.add.group();
+    this.fallingGroup = this.add.group();
+    this.springGroup = this.add.group();
+    this.hazardGroup = this.add.group();
+
+    (level.movingPlatforms || []).forEach(function (cfg) {
+      var p = new MovingPlatform(self, cfg);
+      self.movingPlatforms.push(p);
+      self.movingGroup.add(p);
+    });
+    (level.fallingPlatforms || []).forEach(function (cfg) {
+      var p = new FallingPlatform(self, cfg);
+      self.fallingPlatforms.push(p);
+      self.fallingGroup.add(p);
+    });
+    (level.springs || []).forEach(function (cfg) {
+      var s = new Spring(self, cfg);
+      self.springs.push(s);
+      self.springGroup.add(s);
+    });
+    (level.hazards || []).forEach(function (cfg) {
+      self.hazardGroup.add(new Hazard(self, cfg));
+    });
+  }
+
+  /* Bodies of level geometry (ground, platforms, columns, blocks, moving and
+   * crumbling platforms) overlapping the given rectangle - and nothing else.
+   * Used for ledge/wall/headroom probes and for checking a teleport landing
+   * spot, all of which must ignore actors, coins and power-ups.
+   */
+  solidBoxesIn(x, y, w, h) {
+    var bodies = this.physics.overlapRect(x, y, w, h, true, true) || [];
+    var out = [];
+    for (var i = 0; i < bodies.length; i++) {
+      var go = bodies[i].gameObject;
+      if (go && go.isLevelSolid && bodies[i].enable) out.push(bodies[i]);
+    }
+    return out;
+  }
+
+  /* Arcade does not transfer an immovable body's motion to whatever stands on
+   * it, so the platform's velocity is added on top of the rider's own. Nudging
+   * the rider's position instead does not survive the physics step, which is
+   * why the player used to slide straight off a moving platform.
+   *
+   * Must run AFTER the actors have set their velocities for this frame, or
+   * their own update would simply overwrite the carry.
+   */
+  /* Works out, for each actor, which moving platform it is riding and how much
+   * speed that platform lends it this frame. Runs BEFORE the actors update, so
+   * they fold the loan into the velocity they set themselves; an actor that is
+   * not riding anything gets 0, which is what keeps the value from stacking up
+   * frame after frame and firing the rider off the front of the platform.
+   */
+  /* Horizontal carrying is NOT done here on purpose.
+   *
+   * Arcade already rides actors along a moving platform: when it separates a
+   * body that landed on another, it shifts the rider by the lower body's own
+   * displacement, scaled by that body's friction.x (which defaults to 1). Any
+   * carry added on top of that - by velocity or by position - is applied twice,
+   * and the rider then slides off the front of the platform at exactly double
+   * speed. All this pass does is remember who is riding what, so the descent
+   * assist below knows where to look.
+   */
+  assignPlatformCarry() {
+    var self = this;
+    var riders = [this.player].concat(this.enemyGroup.getChildren());
+    riders.forEach(function (actor) {
+      if (actor && actor.body) actor.ridingPlatform = null;
+    });
+    this.movingPlatforms.forEach(function (plat) {
+      if (!plat.active || !plat.body || !plat.body.enable) return;
+      riders.forEach(function (actor) {
+        if (!actor || !actor.active || !actor.body || !actor.body.enable || actor.dead) return;
+        if (self.isStandingOn(actor, plat)) actor.ridingPlatform = plat;
+      });
+    });
+  }
+
+  /* A platform travelling downwards outruns a rider who is only just starting
+   * to fall, so riders are pulled down with it. Setting (rather than adding)
+   * the velocity means this cannot accumulate either.
+   */
+  carryRidersDown() {
+    var self = this;
+    var riders = [this.player].concat(this.enemyGroup.getChildren());
+    riders.forEach(function (actor) {
+      if (!actor || !actor.active || !actor.body || !actor.body.enable || actor.dead) return;
+      var plat = actor.ridingPlatform;
+      if (!plat || !plat.active || !plat.body) return;
+      if (!self.isStandingOn(actor, plat)) { actor.ridingPlatform = null; return; }
+      var pvy = plat.body.velocity.y;
+      if (pvy > 0) actor.body.velocity.y = Math.max(actor.body.velocity.y, pvy);
+    });
+  }
+
+  /* Deliberately geometric rather than based on body.touching/blocked: Arcade
+   * only raises those flags on frames where it actually had to separate the
+   * two bodies, so an actor resting cleanly on a platform reads as "not
+   * touching" every other frame and would be dropped by the carry.
+   */
+  isStandingOn(actor, plat) {
+    var ab = actor.body;
+    var pb = plat.body;
+    if (ab.velocity.y < -10) return false; // on the way up, not riding
+    return ab.bottom >= pb.top - 6 && ab.bottom <= pb.top + 24 &&
+      ab.right > pb.left + 2 && ab.left < pb.right - 2;
+  }
+
+  onSpring(player, spring) {
+    if (this.playerDying || this.levelComplete || player.dead) return;
+    // Only from above, and only while not already shooting upwards.
+    if (player.body.velocity.y < -20) return;
+    if (player.body.bottom > spring.body.center.y + 14) return;
+    if (!spring.fire()) return;
+    player.bounce(-spring.power);
+    player.usedDoubleJump = false;
+    this.hud.flash('HOOOP!');
+  }
+
+  onHazard(player, hazard) {
+    if (this.playerDying || this.levelComplete || player.dead) return;
+    if (player.invincible || player.invulnerable) return;
+    var fatal = player.takeHit();
+    if (fatal) {
+      this.killPlayer();
+    } else {
+      player.bounce(-430); // pop him back out of the spikes
+      this.hud.flash('AUČ!');
     }
   }
 
@@ -141,6 +320,7 @@ window.GameScene = class GameScene extends Phaser.Scene {
           var zone = self.add.rectangle(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0x000000, 0);
           zone.setVisible(false);
           self.physics.add.existing(zone, true);
+          zone.isLevelSolid = true;
           self.solids.add(zone);
         });
       }
@@ -200,12 +380,22 @@ window.GameScene = class GameScene extends Phaser.Scene {
     } else if (item.itemEffect === 'life') {
       this.lives += 1;
       this.hud.flash('+1 ŽIVOT');
+    } else if (item.itemEffect === 'invincible') {
+      this.player.setInvincible(DataStore.items.rakija && DataStore.items.rakija.duration);
+      this.addScore(300);
+      this.hud.flash('NEUNIŠTIV!');
     }
     item.destroy();
   }
 
   onEnemyTouch(player, enemy) {
     if (enemy.dead || this.playerDying || this.levelComplete) return;
+    if (player.invincible) {
+      var blasted = enemy.blastAway();
+      this.addScore(blasted);
+      this.hud.flash('+' + blasted);
+      return;
+    }
     var playerBottom = player.y + player.body.halfHeight;
     var falling = player.body.velocity.y > 60;
     var fromAbove = playerBottom < enemy.y + enemy.cfg.height * 0.4;
@@ -230,6 +420,11 @@ window.GameScene = class GameScene extends Phaser.Scene {
     this.hud.flash('CILJ!');
     this.cameras.main.stopFollow();
     this.time.delayedCall(1400, function () {
+      // Capture the old best first: recordResult only writes on a strictly
+      // higher score, so comparing against the stored value afterwards showed
+      // "NOVI REKORD!" for merely matching your previous best.
+      var previousBest = SaveManager.getHighScore(self.levelId);
+      var isNewRecord = !previousBest || self.score > previousBest.score;
       SaveManager.recordResult(self.levelId, {
         score: self.score,
         coins: self.coinCount,
@@ -245,6 +440,7 @@ window.GameScene = class GameScene extends Phaser.Scene {
         timeLeft: Math.ceil(self.timeLeft),
         lives: self.lives,
         nextLevelId: next ? next.id : null,
+        newRecord: isNewRecord,
       });
     });
   }
@@ -307,6 +503,7 @@ window.GameScene = class GameScene extends Phaser.Scene {
           coins: self.coinCount,
           respawnPoint: self.respawnPoint,
           checkpointIndex: self.checkpointIndex,
+          justRespawned: true,
         });
       }
     });
@@ -329,12 +526,33 @@ window.GameScene = class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.movingPlatforms.forEach(function (plat) { plat.preMove(dt); });
+    this.springs.forEach(function (spring) { spring.update(dt); });
+    this.assignPlatformCarry();
+
     this.player.update(input, dt);
     this.applyCoinMagnet();
 
-    this.enemyGroup.getChildren().forEach(function (enemy) {
+    var floor = this.level.height + 400;
+    // getChildren() hands back the group's live array, and destroy() splices
+    // out of it, so both lists are copied before they are walked.
+    this.enemyGroup.getChildren().slice().forEach(function (enemy) {
       if (enemy.update) enemy.update(dt);
+      // Anything that slipped off the world is removed rather than left to
+      // fall forever, eating a body and a draw call per frame.
+      if (!enemy.dead && enemy.y > floor) enemy.destroy();
     });
+    this.itemGroup.getChildren().slice().forEach(function (item) {
+      if (item.y > floor) item.destroy();
+      else if (item.body && item.body.enable && item.itemEffect) {
+        // Loose power-ups turn around at walls instead of grinding into them.
+        if (item.body.blocked.left) item.body.setVelocityX(Math.abs(item.body.velocity.x) || 80);
+        else if (item.body.blocked.right) item.body.setVelocityX(-(Math.abs(item.body.velocity.x) || 80));
+      }
+    });
+
+    // After every actor has chosen its velocity for this frame.
+    this.carryRidersDown();
 
     if (!this.levelComplete && !this.playerDying) {
       this.timeLeft -= dt / 1000;
@@ -343,6 +561,12 @@ window.GameScene = class GameScene extends Phaser.Scene {
         this.killPlayer();
       }
       this.checkCheckpoints();
+      // Backstop for the goal. The overlap alone can be skipped: Kvantna
+      // teleportacija moves the player 210px in a single frame, straight over
+      // the sensor, and the level could then never be finished.
+      if (this.player.x >= this.level.flag.x) {
+        this.onReachGoal();
+      }
       if (this.player.y > this.level.height + 120) {
         this.killPlayer();
       }

@@ -5,7 +5,10 @@
   },
   "platform": {
     "brick": { "color": "#b35a2e", "colorDark": "#8a3f1f", "outline": "#1a1a1a" },
-    "question": { "color": "#f4c430", "colorDark": "#c99a1f", "usedColor": "#8a6d3b", "outline": "#1a1a1a" }
+    "stone": { "color": "#9aa0a6", "colorDark": "#71777d", "outline": "#1a1a1a" },
+    "question": { "color": "#f4c430", "colorDark": "#c99a1f", "usedColor": "#8a6d3b", "outline": "#1a1a1a" },
+    "moving": { "color": "#4f7fd8", "colorDark": "#31539e", "outline": "#1a1a1a" },
+    "crumble": { "color": "#c9a06a", "colorDark": "#8a6a3f", "outline": "#1a1a1a" }
   },
   "column": {
     "stoneColumn": { "color": "#a8a8a0", "colorDark": "#7d7d76", "outline": "#1a1a1a" }

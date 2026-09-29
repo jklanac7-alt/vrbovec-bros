@@ -147,7 +147,9 @@
       var treesFront = scene.add.graphics();
       treesFront.setScrollFactor(1.15);
       treesFront.setDepth(30);
-      treesFront.setAlpha(0.92);
+      // Kept fairly transparent so they frame the shot without hiding what the
+      // player has to react to.
+      treesFront.setAlpha(0.7);
       var frontSpan = span(1.15);
       for (var fx = 760; fx < frontSpan; fx += 1750) {
         drawTree(treesFront, fx, worldHeight + 92, 1.35, theme, 1);

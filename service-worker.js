@@ -1,4 +1,8 @@
-const CACHE_NAME = 'vrbovec-bros-v1';
+/* Bump CACHE_NAME on every release. The fetch handler is cache-first, so a
+ * stale cache keeps serving the old game code and the old level JSON forever
+ * to anyone who already played once.
+ */
+const CACHE_NAME = 'vrbovec-bros-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -13,6 +17,7 @@ const CORE_ASSETS = [
   './src/objects/Player.js',
   './src/objects/Enemy.js',
   './src/objects/Collectibles.js',
+  './src/objects/Obstacles.js',
   './src/ui/UIKit.js',
   './src/ui/HUD.js',
   './src/ui/Background.js',
@@ -59,6 +64,25 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Game content (levels, characters, tuning) is network-first so a rebalanced
+  // level reaches players on the next load instead of on the next cache bump.
+  // It still falls back to the cache, so offline play is unaffected.
+  if (/\.json(\?|$)/.test(event.request.url)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

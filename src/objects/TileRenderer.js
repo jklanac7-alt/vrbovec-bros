@@ -6,11 +6,17 @@
  * and predictable regardless of how decorative art (e.g. Landmarks.js) looks.
  */
 (function () {
+  /* Every collidable box in the world carries `isLevelSolid` so that ground /
+   * wall / ceiling probes (enemy ledge detection, teleport landing checks,
+   * spawn un-sticking) can tell level geometry apart from actors and pickups
+   * without having to know which group it ended up in.
+   */
   function addStaticBox(scene, group, x, y, w, h) {
     var zone = scene.add.rectangle(x + w / 2, y + h / 2, w, h, 0x000000, 0);
     zone.setVisible(false);
     scene.physics.add.existing(zone, true);
     zone.body.updateFromGameObject();
+    zone.isLevelSolid = true;
     group.add(zone);
     return zone;
   }
@@ -143,7 +149,14 @@
       );
       flagShape.setDepth(8);
       g.setDepth(7);
-      var sensor = scene.add.rectangle(baseX, baseY - poleHeight / 2, 40, poleHeight);
+      /* The goal sensor reaches from the ground all the way to the top of the
+       * world, not just to the top of the pole. A player arriving off a high
+       * platform used to sail straight over the pole - above the old sensor -
+       * and land past the flag, leaving the level impossible to finish from
+       * there because nothing behind the flag sends him back.
+       */
+      var sensorH = baseY + 200;
+      var sensor = scene.add.rectangle(baseX, baseY - sensorH / 2, 48, sensorH);
       sensor.setVisible(false);
       scene.physics.add.existing(sensor, true);
       return { pole: g, flag: flagShape, sensor: sensor, topY: baseY - poleHeight };

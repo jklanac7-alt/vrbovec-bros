@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="hr">
 <head>
 <meta charset="UTF-8" />
@@ -43,7 +43,7 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
   <script src="src/objects/TileRenderer.js"></script>
   <script src="src/objects/Player.js"></script>
   <script src="src/objects/Enemy.js"></script>
-  <script src="src/objects/Collectibles.js"></script>
+  <script src="src/objects/Collectibles.js"></script>  <script src="src/objects/Obstacles.js"></script>
   <script src="src/ui/UIKit.js"></script>
   <script src="src/ui/HUD.js"></script>
   <script src="src/ui/Background.js"></script>
@@ -111,18 +111,46 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
       };
     };
   }
+  /* Headless Chrome puts WebGL through SwiftShader on the CPU, and this level
+   * rebuilds every enemy and the player as fresh Graphics each frame. Drawing
+   * is what makes a whole-level playthrough take minutes; nothing in the
+   * simulation depends on it (cameras update in the UPDATE phase, not in
+   * render), so the draw pass is switched off while the bot plays.
+   */
+  var realSceneRender = null;
+  function renderOff() {
+    if (realSceneRender) return;
+    realSceneRender = window.game.scene.render;
+    window.game.scene.render = function () {};
+  }
+  function renderOn() {
+    if (!realSceneRender) return;
+    window.game.scene.render = realSceneRender;
+    realSceneRender = null;
+  }
+
   function gameScene() { return window.game.scene.getScene('Game'); }
   function activeScenes() {
     return window.game.scene.scenes.filter(function (s) { return s.scene.isActive(); })
       .map(function (s) { return s.scene.key; }).join('+');
   }
+  /* Places the player at rest. ownVX has to be cleared too, or momentum from
+   * an earlier check leaks into the next one - which showed up as the player
+   * apparently sliding off a moving platform he was in fact riding correctly.
+   */
   function teleport(gs, x, y) {
     gs.player.x = x;
     gs.player.y = y;
     gs.player.body.reset(x, y);
+    gs.player.ownVX = 0;
+    gs.player.platformVX = 0;
   }
 
   /* ---------- level geometry sanity (no simulation needed) ---------- */
+  function rectsOverlap(a, b) {
+    return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+  }
+
   function analyseLevel(level) {
     var chars = DataStore.getCharacterList();
     var g = level.gravity;
@@ -135,38 +163,81 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
     var walkReach = weakest.stats.walkSpeed * airtime;
     note('najslabiji skok: ' + weakest.id + ' visina ' + Math.round(weakest.jh) +
       'px, domet hodanjem ' + Math.round(walkReach) + 'px');
+    note('duljina staze: ' + level.width + 'px, zastava na x=' + level.flag.x);
 
-    // gaps between ground segments
+    /* Everything the player can stand on. Moving platforms contribute the two
+     * extremes of their path, so a route that only exists while a platform is
+     * at one end of its rail still counts as a real route.
+     */
+    var surfaces = [];
+    (level.ground || []).forEach(function (s) { surfaces.push({ x1: s.x, x2: s.x + s.width, top: s.y, kind: 'tlo' }); });
+    (level.platforms || []).forEach(function (p) { surfaces.push({ x1: p.x, x2: p.x + p.width, top: p.y, kind: 'platforma' }); });
+    (level.columns || []).forEach(function (c) { surfaces.push({ x1: c.x, x2: c.x + c.width, top: c.y, kind: 'stup' }); });
+    (level.fallingPlatforms || []).forEach(function (p) {
+      surfaces.push({ x1: p.x, x2: p.x + p.width, top: p.y, kind: 'trosna' });
+    });
+    (level.movingPlatforms || []).forEach(function (p) {
+      var rx = p.rangeX || 0, ry = p.rangeY || 0;
+      [-1, 1].forEach(function (sign) {
+        surfaces.push({
+          x1: p.x + sign * rx, x2: p.x + p.width + sign * rx,
+          top: p.y + sign * ry, kind: 'pokretna', moving: true,
+        });
+      });
+    });
+
+    // Springs are launch pads: from one you reach far higher than a jump.
+    var springReach = (level.springs || []).map(function (s) {
+      var power = s.power || 1020;
+      return { x: s.x, top: s.y, height: (power * power) / (2 * g) };
+    });
+
+    // ---- gaps between ground segments ----
     var segs = (level.ground || []).slice().sort(function (a, b) { return a.x - b.x; });
     var badGaps = [];
     for (var i = 1; i < segs.length; i++) {
       var gapStart = segs[i - 1].x + segs[i - 1].width;
       var gapW = segs[i].x - gapStart;
-      if (gapW > walkReach - 10) badGaps.push('x=' + gapStart + ' sirina ' + gapW);
-    }
-    check('sve rupe preskocive i najslabijim likom', badGaps.length === 0, badGaps.join(' | ') || 'ok');
-
-    // every platform/column top should be reachable from some lower surface
-    var surfaces = [];
-    (level.ground || []).forEach(function (s) { surfaces.push({ x1: s.x, x2: s.x + s.width, top: s.y }); });
-    (level.platforms || []).forEach(function (p) { surfaces.push({ x1: p.x, x2: p.x + p.width, top: p.y }); });
-    (level.columns || []).forEach(function (c) { surfaces.push({ x1: c.x, x2: c.x + c.width, top: c.y }); });
-
-    var unreachable = [];
-    (level.platforms || []).concat(level.columns || []).forEach(function (p) {
-      var top = p.y;
-      var ok = surfaces.some(function (s) {
-        if (s === p) return false;
-        if (s.top <= top) return false;                       // must be lower than the target
-        if (s.top - top > weakest.jh - 12) return false;      // within jump height
-        var horizGap = Math.max(p.x - s.x2, s.x1 - (p.x + p.width));
-        return horizGap < 160;                                // close enough to jump across
+      if (gapW <= walkReach - 10) continue;
+      // A gap wider than a plain jump is fine when something spans it.
+      var bridged = surfaces.some(function (s) {
+        return s.x2 > gapStart - 40 && s.x1 < segs[i].x + 40 && s.top < segs[i].y;
       });
-      if (!ok) unreachable.push('x=' + p.x + ' y=' + p.y);
-    });
-    check('sve platforme dohvatljive skokom', unreachable.length === 0, unreachable.join(' | ') || 'ok');
+      if (!bridged) badGaps.push('x=' + gapStart + ' sirina ' + gapW);
+    }
+    check('sve rupe prijelazne i najslabijim likom', badGaps.length === 0, badGaps.join(' | ') || 'ok');
 
-    // question blocks must be bumpable: block bottom above standing head, within jump
+    // ---- every standing surface should be reachable ----
+    var unreachable = [];
+    surfaces.forEach(function (target) {
+      if (target.kind === 'tlo') return;
+      var ok = surfaces.some(function (s) {
+        if (s === target) return false;
+        if (s.top <= target.top) return false;                  // must be lower
+        if (s.top - target.top > weakest.jh - 12) return false;  // within jump height
+        var horizGap = Math.max(target.x1 - s.x2, s.x1 - target.x2);
+        return horizGap < 160;
+      });
+      if (!ok) {
+        // ...or launched onto by a spring standing underneath it
+        ok = springReach.some(function (sp) {
+          return sp.x > target.x1 - 260 && sp.x < target.x2 + 260 &&
+            sp.top - target.top < sp.height - 30;
+        });
+      }
+      if (!ok) {
+        // ...or simply dropped onto from something directly above it
+        ok = surfaces.some(function (s) {
+          if (s === target || s.top >= target.top) return false;
+          if (target.top - s.top > 400) return false;
+          return Math.max(target.x1 - s.x2, s.x1 - target.x2) < 120;
+        });
+      }
+      if (!ok) unreachable.push(target.kind + ' x=' + Math.round(target.x1) + ' y=' + Math.round(target.top));
+    });
+    check('sve platforme dohvatljive', unreachable.length === 0, unreachable.join(' | ') || 'ok');
+
+    // ---- question blocks must be bumpable from below ----
     var badBlocks = [];
     (level.questionBlocks || []).forEach(function (qb) {
       var below = surfaces.filter(function (s) {
@@ -180,16 +251,210 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
     });
     check('svi upitnik-blokovi udarivi odozdo', badBlocks.length === 0, badBlocks.join(' | ') || 'ok');
 
-    // enemies must patrol on solid ground
-    var badEnemies = [];
+    /* The big (mushroom) player is 116px tall. Anything he has to walk under
+     * on his way through the level must leave more room than that, otherwise
+     * growing turns into a dead end - which is exactly what used to happen. */
+    var tooLow = [];
+    (level.questionBlocks || []).forEach(function (qb) {
+      var below = surfaces.filter(function (s) {
+        return s.top > qb.y && qb.x > s.x1 - 20 && qb.x < s.x2 + 20 && s.kind === 'tlo';
+      }).sort(function (a, b) { return a.top - b.top; })[0];
+      if (!below) return;
+      var clearance = below.top - (qb.y + 24);
+      if (clearance < 124) tooLow.push('blok x=' + qb.x + ' prolaz ' + Math.round(clearance) + 'px');
+    });
+    check('veliki lik prolazi ispod svih blokova (>=124px)', tooLow.length === 0, tooLow.join(' | ') || 'ok');
+
+    // ---- enemies must stand on ground, clear of any geometry ----
+    var enemyBoxes = [];
     (level.enemies || []).forEach(function (e) {
+      var cfg = DataStore.enemies.types[e.type];
+      if (!cfg) { enemyBoxes.push({ bad: 'nepoznat tip ' + e.type }); return; }
+      if (cfg.behavior === 'fly') return;
       var r = e.range || 0;
-      var onGround = (level.ground || []).some(function (s) {
-        return e.x - r >= s.x - 5 && e.x + r <= s.x + s.width + 5;
+      var half = cfg.width / 2;
+      enemyBoxes.push({
+        label: e.type + '@' + e.x,
+        x1: e.x - r - half, x2: e.x + r + half,
+        y1: e.y - cfg.height / 2, y2: e.y + cfg.height / 2,
       });
-      if (!onGround) badEnemies.push(e.type + '@' + e.x);
+    });
+
+    var badEnemies = [];
+    enemyBoxes.forEach(function (box) {
+      if (box.bad) { badEnemies.push(box.bad); return; }
+      var onGround = (level.ground || []).some(function (s) {
+        return box.x1 >= s.x - 5 && box.x2 <= s.x + s.width + 5;
+      });
+      if (!onGround) badEnemies.push(box.label + ' (patrola izlazi s tla)');
     });
     check('neprijatelji patroliraju po tlu (ne u rupe)', badEnemies.length === 0, badEnemies.join(' | ') || 'ok');
+
+    /* Enemies spawned inside a brick were shoved sideways out of it by Arcade
+     * on the first frame and then ground along its underside - the "twitching
+     * mushrooms". The engine now lifts them out, but the level data should not
+     * need rescuing in the first place. */
+    var blockers = [];
+    (level.platforms || []).forEach(function (p) {
+      blockers.push({ label: 'platforma x=' + p.x, x1: p.x, x2: p.x + p.width, y1: p.y, y2: p.y + p.height });
+    });
+    (level.columns || []).forEach(function (c) {
+      blockers.push({ label: 'stup x=' + c.x, x1: c.x, x2: c.x + c.width, y1: c.y, y2: c.y + c.height });
+    });
+    (level.fallingPlatforms || []).forEach(function (p) {
+      blockers.push({ label: 'trosna x=' + p.x, x1: p.x, x2: p.x + p.width, y1: p.y, y2: p.y + p.height });
+    });
+    (level.hazards || []).forEach(function (h) {
+      blockers.push({ label: 'siljci x=' + h.x, x1: h.x, x2: h.x + h.width, y1: h.y, y2: h.y + h.height });
+    });
+
+    var collisions = [];
+    enemyBoxes.forEach(function (box) {
+      if (box.bad) return;
+      blockers.forEach(function (b) {
+        if (rectsOverlap(box, b)) collisions.push(box.label + ' x ' + b.label);
+      });
+    });
+    check('putanje neprijatelja ne sijeku geometriju', collisions.length === 0, collisions.join(' | ') || 'ok');
+
+    // ---- hazards / springs must sit on a real surface ----
+    var floating = [];
+    (level.hazards || []).concat((level.springs || []).map(function (s) {
+      return { x: s.x - 26, y: s.y - 34, width: 52, height: 34, spring: true };
+    })).forEach(function (h) {
+      var onSurface = surfaces.some(function (s) {
+        return Math.abs(s.top - (h.y + h.height)) < 26 && h.x >= s.x1 - 10 && h.x + h.width <= s.x2 + 10;
+      });
+      if (!onSurface) floating.push((h.spring ? 'trampolin' : 'prepreka') + ' x=' + Math.round(h.x));
+    });
+    check('prepreke i trampolini stoje na podlozi', floating.length === 0, floating.join(' | ') || 'ok');
+
+    // ---- moving platforms must not sweep through terrain ----
+    var sweeping = [];
+    (level.movingPlatforms || []).forEach(function (p) {
+      var rx = p.rangeX || 0, ry = p.rangeY || 0;
+      var sweep = {
+        x1: p.x - rx, x2: p.x + p.width + rx,
+        y1: p.y - ry, y2: p.y + p.height + ry,
+      };
+      blockers.concat((level.ground || []).map(function (s) {
+        return { label: 'tlo x=' + s.x, x1: s.x, x2: s.x + s.width, y1: s.y, y2: s.y + s.height };
+      })).forEach(function (b) {
+        if (rectsOverlap(sweep, b)) sweeping.push('pokretna x=' + p.x + ' kroz ' + b.label);
+      });
+    });
+    check('pokretne platforme ne prolaze kroz teren', sweeping.length === 0, sweeping.join(' | ') || 'ok');
+
+    // ---- there must be enough time on the clock to actually finish ----
+    var minTravel = level.flag.x / weakest.stats.runSpeed;
+    check('vremensko ogranicenje dostatno', level.timeLimit > minTravel * 2.2,
+      level.timeLimit + 's za stazu koja trci ' + Math.round(minTravel) + 's');
+  }
+
+  /* ---------- autoplay: actually play the level, start to flag ----------
+   * A deliberately dumb bot: hold right, and jump when it meets a wall, a
+   * ledge, an enemy, or simply stops making progress. If a human route exists
+   * the bot finds it; when it jams at one x for two seconds that is a real
+   * blocker in the level, which is how "the big character cannot get any
+   * further" would have been caught before shipping.
+   */
+  function autoplay(opts) {
+    opts = opts || {};
+    var budget = opts.ticks || 8000;
+    window.game.scene.start('Game', {
+      levelId: opts.levelId || 'vrbovec-centar',
+      characterId: opts.characterId,
+      lives: opts.lives || 9,
+    });
+    steps(8);
+    renderOff();
+
+    var st = { left: false, right: true, run: opts.run !== false, jump: false, pressed: false };
+    var botState = function () {
+      return {
+        left: st.left, right: st.right, run: st.run,
+        jumpDown: st.jump, jumpPressed: st.pressed, pausePressed: false,
+      };
+    };
+
+    var maxX = 0, deaths = 0, stall = 0, worstStall = 0, stallAt = 0, jumpLock = 0;
+    var lastX = -1, wasDying = false, grown = false, result = 'istekao budzet';
+    var startedAt = 0;
+
+    for (var t = 0; t < budget; t++) {
+      var gs = gameScene();
+      if (!gs || !gs.scene.isActive()) {
+        if (activeScenes().indexOf('GameOver') !== -1) { result = 'GAME OVER'; break; }
+        if (activeScenes().indexOf('LevelComplete') !== -1) { result = 'prosao'; break; }
+        steps(1);
+        continue;
+      }
+      if (!gs.player || !gs.player.body) { steps(1); continue; }
+      if (gs.inputManager && gs.inputManager.getState !== botState) {
+        gs.inputManager.getState = botState;
+        grown = false; // fresh scene after a death
+      }
+      if (opts.big && !grown && gs.player.body.blocked.down) {
+        gs.player.grow();
+        grown = true;
+      }
+
+      var p = gs.player;
+      var b = p.body;
+      if (!startedAt) startedAt = p.x;
+      if (p.x > maxX) maxX = p.x;
+
+      if (gs.levelComplete) { result = 'prosao'; steps(140); break; }
+      if (gs.playerDying) {
+        if (!wasDying) { deaths++; wasDying = true; }
+        st.pressed = false; st.jump = false;
+        steps(1);
+        continue;
+      }
+      wasDying = false;
+
+      var onGround = b.blocked.down || b.touching.down;
+      var want = false;
+
+      if (b.blocked.right) want = true;
+      /* Jump only for a genuine pit. The probe reaches 260px down, so the bot
+       * walks off the edge of a platform that has ground underneath it instead
+       * of launching itself off every ledge in the level. */
+      if (onGround && gs.solidBoxesIn(b.right + 4, b.bottom + 4, 44, 260).length === 0) want = true;
+      // something to hop over
+      gs.enemyGroup.getChildren().forEach(function (e) {
+        if (e.dead || !e.body) return;
+        if (e.body.left > b.right - 10 && e.body.left < b.right + 130 && Math.abs(e.y - p.y) < 90) want = true;
+      });
+      /* Hazards are jumped at the last possible moment: leaving early lands
+       * you in the middle of the spikes rather than past them. */
+      gs.hazardGroup.getChildren().forEach(function (h) {
+        if (!h.body || !onGround) return;
+        if (h.body.left > b.right + 4 && h.body.left < b.right + 40 && h.body.top > b.top) want = true;
+      });
+
+      if (p.x <= lastX + 0.25) stall++; else stall = 0;
+      lastX = p.x;
+      if (stall > worstStall) { worstStall = stall; stallAt = Math.round(p.x); }
+      if (stall > 10) want = true;
+      if (stall > 130) { result = 'ZAGLAVIO na x=' + Math.round(p.x); break; }
+
+      // The lock only suppresses mid-air re-presses (which would burn a double
+      // jump or a teleport); back on the ground the bot may jump again at once,
+      // the way a player can when two obstacles come one after another.
+      if (jumpLock > 0) { jumpLock--; if (!onGround) want = false; }
+      st.pressed = want;
+      st.jump = want || (jumpLock > 6);
+      if (want) jumpLock = 11;
+
+      steps(1);
+    }
+
+    renderOn();
+    return {
+      result: result, maxX: Math.round(maxX), deaths: deaths,
+      worstStall: worstStall, stallAt: stallAt,
+    };
   }
 
   /* ---------- gameplay simulation ---------- */
@@ -216,9 +481,19 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
       gs = gameScene();
       check('level scena pokrenuta', activeScenes() === 'Game', activeScenes());
       check('staticna geometrija stvorena', gs.solids.getChildren().length > 20, gs.solids.getChildren().length + ' tijela');
-      check('neprijatelji stvoreni', gs.enemyGroup.getChildren().length === 8, gs.enemyGroup.getChildren().length);
-      check('novcici stvoreni', gs.coinGroup.getChildren().length > 30, gs.coinGroup.getChildren().length);
-      check('znamenitosti nacrtane', (gs.level.landmarks || []).length === 5, (gs.level.landmarks || []).length);
+      check('neprijatelji stvoreni', gs.enemyGroup.getChildren().length === gs.level.enemies.length,
+        gs.enemyGroup.getChildren().length + '/' + gs.level.enemies.length);
+      check('novcici stvoreni', gs.coinGroup.getChildren().length === gs.level.coins.length,
+        gs.coinGroup.getChildren().length + '/' + gs.level.coins.length);
+      check('znamenitosti nacrtane', (gs.level.landmarks || []).length >= 5, (gs.level.landmarks || []).length);
+      check('pokretne platforme stvorene', gs.movingPlatforms.length === (gs.level.movingPlatforms || []).length,
+        gs.movingPlatforms.length);
+      check('trosne platforme stvorene', gs.fallingPlatforms.length === (gs.level.fallingPlatforms || []).length,
+        gs.fallingPlatforms.length);
+      check('trampolini i prepreke stvoreni',
+        gs.springs.length === (gs.level.springs || []).length &&
+        gs.hazardGroup.getChildren().length === (gs.level.hazards || []).length,
+        gs.springs.length + ' trampolina, ' + gs.hazardGroup.getChildren().length + ' prepreka');
 
       // 1. gravity + ground collision
       gs.inputManager.getState = input({});
@@ -438,7 +713,260 @@ console.warn = function () { rec(window.__warns, Array.prototype.map.call(argume
           (collected ? ' (pokupljen)' : ''));
       }
 
+      /* ---------- regressions for the reported bugs ---------- */
+
+      // 17. the mushroom must not blow the collision body out of proportion.
+      // It used to: scaling the Container re-scaled the Arcade body that had
+      // just been sized by hand, giving a 52x150 hitbox for a 40x116 character.
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      steps(8);
+      gs = gameScene();
+      gs.inputManager.getState = input({});
+      teleport(gs, 300, 560);
+      steps(40);
+      var smallH = gs.player.body.height;
+      var smallW = gs.player.body.width;
+      var feetBefore = Math.round(gs.player.y + gs.player.body.halfHeight);
+      gs.player.grow();
+      steps(6);
+      check('veliki lik ima tocno tijelo 40x116',
+        Math.abs(gs.player.body.width - 40) < 0.6 && Math.abs(gs.player.body.height - 116) < 0.6,
+        'malo ' + smallW + 'x' + smallH + ' -> veliko ' +
+        gs.player.body.width.toFixed(1) + 'x' + gs.player.body.height.toFixed(1));
+      check('rast ne gura lika u tlo',
+        Math.abs(Math.round(gs.player.y + gs.player.body.halfHeight) - feetBefore) <= 2,
+        'stopala ' + feetBefore + ' -> ' + Math.round(gs.player.y + gs.player.body.halfHeight));
+      check('container se ne skalira (inace se skalira i tijelo)',
+        gs.player.scaleX === 1 && gs.player.scaleY === 1, 'scale=' + gs.player.scaleX);
+
+      // 18. a grown player must jump as high as a small one
+      function measureJump(big) {
+        window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+        steps(8);
+        var s = gameScene();
+        s.inputManager.getState = input({});
+        teleport(s, 300, 540);
+        steps(35);
+        if (big) { s.player.grow(); steps(12); }
+        var y0 = s.player.y, peak = y0;
+        s.inputManager.getState = input({ jump: true });
+        steps(2);
+        s.inputManager.getState = input({});
+        for (var k = 0; k < 70; k++) { steps(1); if (s.player.y < peak) peak = s.player.y; }
+        return Math.round(y0 - peak);
+      }
+      var jumpSmall = measureJump(false);
+      var jumpBig = measureJump(true);
+      check('veliki lik skace jednako visoko kao mali', jumpBig > jumpSmall - 12,
+        'malo ' + jumpSmall + 'px, veliko ' + jumpBig + 'px');
+
+      // 19. no enemy may start its life stuck inside level geometry
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      steps(8);
+      gs = gameScene();
+      gs.inputManager.getState = input({});
+      steps(4);
+      var embedded = [];
+      gs.enemyGroup.getChildren().forEach(function (e) {
+        if (e.cfg.behavior === 'fly') return;
+        var inside = gs.solidBoxesIn(e.body.left + 2, e.body.top + 2, e.body.width - 4, e.body.height - 4);
+        if (inside.length) embedded.push(e.typeId + '@' + Math.round(e.x));
+      });
+      check('nijedan neprijatelj ne startuje u zidu', embedded.length === 0, embedded.join(' | ') || 'ok');
+
+      // 20. every patroller has to keep moving for 10 simulated seconds
+      var tracked = gs.enemyGroup.getChildren().map(function (e) {
+        return { e: e, id: e.typeId + '@' + Math.round(e.x), min: e.x, max: e.x };
+      });
+      for (var w = 0; w < 600; w++) {
+        steps(1);
+        tracked.forEach(function (t) { if (t.e.active) { t.min = Math.min(t.min, t.e.x); t.max = Math.max(t.max, t.e.x); } });
+      }
+      var frozen = [];
+      tracked.forEach(function (t) {
+        if (!t.e.active) return;
+        if (t.e.cfg.behavior === 'hop') return;
+        if (t.max - t.min < 60) frozen.push(t.id + ' (' + Math.round(t.max - t.min) + 'px)');
+      });
+      check('svi hodajuci neprijatelji se stvarno krecu', frozen.length === 0, frozen.join(' | ') || 'ok');
+
+      var fallenOut = gs.enemyGroup.getChildren().filter(function (e) { return e.y > gs.level.height + 400; });
+      check('neprijatelji ne ostaju vjecno padati', fallenOut.length === 0, fallenOut.length + ' u slobodnom padu');
+
+      // 21. hoppers under a low ceiling must not hammer into it
+      var hoppers = gs.enemyGroup.getChildren().filter(function (e) { return e.cfg.behavior === 'hop'; });
+      var bonking = hoppers.filter(function (e) { return e.body.blocked.up; });
+      check('skakaci ne udaraju u strop', bonking.length === 0, hoppers.length + ' skakaca, ' + bonking.length + ' u stropu');
+
+      /* ---------- new level elements ---------- */
+
+      /* These mechanics are probed next to spikes and mud, and a death would
+       * restart the scene and destroy the very objects under test, so the
+       * player is made invincible for the duration. Test 25 starts a fresh
+       * scene precisely because it needs damage to land.
+       */
+      gs.inputManager.getState = input({});
+      gs.player.setInvincible(600000);
+
+      // 22. moving platform carries the player instead of sliding out from under him
+      var plat = gs.movingPlatforms.filter(function (p) { return p.rangeX > 0; })[0];
+      note('pokretne platforme: ' + gs.movingPlatforms.map(function (p) {
+        return 'p=' + Math.round(p.pathX) + ' x=' + Math.round(p.x) + ' y=' + Math.round(p.y) +
+          ' rx=' + p.rangeX + ' aktivna=' + p.active + ' tijelo=' + (p.body ? 'da' : 'ne');
+      }).join(' | '));
+      check('postoji vodoravna pokretna platforma', !!plat && !!plat.body,
+        plat ? 'x=' + Math.round(plat.x) : 'nema');
+      if (plat && plat.body) {
+        // Dropped from just above (60 = half the body height plus a little),
+        // so the platform cannot slide out from under the player mid-fall and
+        // leave the test measuring nothing.
+        teleport(gs, plat.x, plat.body.top - 60);
+        steps(16);
+        var riding = gs.player.body.blocked.down || gs.player.body.touching.down;
+        /* Measured across the whole window, not just at its ends: the player
+         * has to stay put RELATIVE to the platform for every frame of it.
+         */
+        var rel0 = gs.player.x - plat.x;
+        var platTravel = 0, maxDrift = 0;
+        for (var mIdx = 0; mIdx < 40; mIdx++) {
+          var was = plat.x;
+          steps(1);
+          platTravel += Math.abs(plat.x - was);
+          maxDrift = Math.max(maxDrift, Math.abs(gs.player.x - plat.x - rel0));
+        }
+        check('igrac stoji na pokretnoj platformi', riding, 'blocked.down=' + riding);
+        check('pokretna platforma nosi igraca', riding && platTravel > 40 && maxDrift < 8,
+          'najvece odstupanje ' + maxDrift.toFixed(1) + 'px dok je platforma presla ' +
+          Math.round(platTravel) + 'px');
+      }
+
+      // 22b. a vertical platform must not leave its rider behind either
+      var vPlat = gs.movingPlatforms.filter(function (p) { return p.rangeY > 0; })[0];
+      if (vPlat && vPlat.body) {
+        teleport(gs, vPlat.x, vPlat.body.top - 60);
+        steps(16);
+        var vRel0 = gs.player.y - vPlat.y;
+        var vTravel = 0, vDrift = 0;
+        for (var vIdx = 0; vIdx < 60; vIdx++) {
+          var vWas = vPlat.y;
+          steps(1);
+          vTravel += Math.abs(vPlat.y - vWas);
+          vDrift = Math.max(vDrift, Math.abs(gs.player.y - vPlat.y - vRel0));
+        }
+        check('okomita platforma ne ostavlja igraca', vTravel > 30 && vDrift < 26,
+          'odstupanje ' + Math.round(vDrift) + 'px dok je platforma presla ' + Math.round(vTravel) + 'px');
+      }
+
+      // 23. crumbling platform gives way, then comes back
+      var crumble = gs.fallingPlatforms[0];
+      if (crumble && crumble.body) {
+        teleport(gs, crumble.homeX, crumble.body.top - 60);
+        steps(24);
+        check('trosna platforma se aktivira kad se stane na nju', crumble.triggered && crumble.body.enable,
+          'aktivirana=' + crumble.triggered);
+        steps(130);
+        check('trosna platforma se urusi', crumble.body && !crumble.body.enable,
+          'enable=' + (crumble.body && crumble.body.enable));
+        steps(280);
+        check('trosna platforma se vrati',
+          crumble.body && crumble.body.enable && Math.round(crumble.y) === Math.round(crumble.homeY),
+          'enable=' + (crumble.body && crumble.body.enable) + ' y=' + Math.round(crumble.y) + '/' + crumble.homeY);
+      }
+
+      // 24. spring launches the player well above a normal jump
+      var spring = gs.springs[0];
+      if (spring) {
+        teleport(gs, spring.x, spring.y - 130);
+        var springPeak = 9999;
+        for (var sIdx = 0; sIdx < 90; sIdx++) { steps(1); springPeak = Math.min(springPeak, gs.player.y); }
+        check('trampolin baca vise od obicnog skoka', spring.y - springPeak > jumpSmall + 80,
+          Math.round(spring.y - springPeak) + 'px (skok je ' + jumpSmall + 'px)');
+      }
+
+      // 25. spikes cost the power-up, not the level
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      steps(8);
+      gs = gameScene();
+      gs.inputManager.getState = input({});
+      var spike = gs.hazardGroup.getChildren()[0];
+      if (spike) {
+        gs.player.invulnerable = false;
+        gs.player.invulnTimer = 0;
+        gs.player.grow();
+        steps(4);
+        teleport(gs, spike.x, spike.y - 70);
+        steps(20);
+        check('prepreka skida power-up', gs.player.isBig === false && !gs.playerDying,
+          'big=' + gs.player.isBig + ' dying=' + gs.playerDying);
+        gs.player.invulnerable = false;
+        gs.player.invulnTimer = 0;
+        teleport(gs, spike.x, spike.y - 70);
+        steps(20);
+        check('prepreka ubija malog igraca', gs.playerDying === true, 'dying=' + gs.playerDying);
+      }
+
+      // 26. rakija: enemies die on contact and the player survives
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      steps(8);
+      gs = gameScene();
+      gs.inputManager.getState = input({});
+      gs.player.setInvincible(8000);
+      var victim = gs.enemyGroup.getChildren().filter(function (e) {
+        return !e.dead && e.cfg.behavior === 'patrol';
+      })[0];
+      var scoreBeforeBlast = gs.score;
+      teleport(gs, victim.x, victim.y);
+      steps(6);
+      check('rakija: neprijatelj gine na dodir', victim.dead && gs.score > scoreBeforeBlast,
+        'dead=' + victim.dead + ' +' + (gs.score - scoreBeforeBlast));
+      check('rakija: igrac prezivi dodir', !gs.playerDying && gs.player.isBig === false,
+        'dying=' + gs.playerDying);
+      var invTicks = 0;
+      while (gs.player.invincible && invTicks < 700) { steps(1); invTicks++; }
+      check('rakija istekne sama od sebe', !gs.player.invincible, Math.round(invTicks / 60) + 's');
+
+      // 27. flyers exist, stay airborne and are not separated by terrain
+      var flyers = gs.enemyGroup.getChildren().filter(function (e) { return e.cfg.behavior === 'fly'; });
+      check('leteci neprijatelji postoje', flyers.length > 0, flyers.length);
+      if (flyers.length) {
+        var flyStart = flyers[0].y;
+        var flyMin = flyStart, flyMax = flyStart;
+        for (var f = 0; f < 300; f++) {
+          steps(1);
+          flyMin = Math.min(flyMin, flyers[0].y);
+          flyMax = Math.max(flyMax, flyers[0].y);
+        }
+        check('leteci se njise i ne pada', flyMax - flyMin > 40 && flyers[0].y < gs.level.height,
+          'raspon ' + Math.round(flyMax - flyMin) + 'px, y=' + Math.round(flyers[0].y));
+      }
+
+      /* ---------- full playthroughs ---------- */
+      // The real answer to "can this level be finished": let a bot do it, with
+      // each character, small and grown.
+      allChars.forEach(function (c) {
+        var r = autoplay({ characterId: c.id });
+        note('prolaz ' + c.id + ': ' + r.result + ' do x=' + r.maxX +
+          ', smrti=' + r.deaths + ', najduze zaglavljenje=' + r.worstStall + ' frameova @x=' + r.stallAt);
+        check('bot prelazi level likom ' + c.id, r.result === 'prosao',
+          r.result + ' @x=' + r.maxX + '/' + DataStore.getLevelData('vrbovec-centar').flag.x);
+      });
+
+      var bigRun = autoplay({ characterId: plainChar.id, big: true });
+      note('prolaz veliki: ' + bigRun.result + ' do x=' + bigRun.maxX +
+        ', smrti=' + bigRun.deaths + ', najduze zaglavljenje=' + bigRun.worstStall + ' @x=' + bigRun.stallAt);
+      check('bot prelazi level i kad je velik', bigRun.result === 'prosao',
+        bigRun.result + ' @x=' + bigRun.maxX);
+
+      var walkRun = autoplay({ characterId: plainChar.id, run: false, ticks: 20000 });
+      note('prolaz hodanjem: ' + walkRun.result + ' do x=' + walkRun.maxX + ', smrti=' + walkRun.deaths);
+      check('bot prelazi level i samo hodanjem', walkRun.result === 'prosao',
+        walkRun.result + ' @x=' + walkRun.maxX);
+
       // 16. no DOM leftovers from the input manager
+      window.game.scene.start('Game', { levelId: 'vrbovec-centar', characterId: plainChar.id });
+      steps(6);
+      window.game.scene.stop('Game');
+      steps(4);
       var touchRoots = document.querySelectorAll('#touch-controls-root').length;
       check('touch kontrole ociscene nakon scene', touchRoots <= 1, touchRoots + ' root elemenata');
 
